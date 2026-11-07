@@ -37,18 +37,18 @@ func main() {
 		log.Printf("warning: ensure default user: %v", err)
 	}
 
-	// Start optional simulated Xteink X3 CrossPoint listener for local testing
+	// Start optional simulated CrossPoint Reader listener for local testing
 	if cfg.EnableMockX3 {
 		simDir := filepath.Join(cfg.DataDir, "mock-x3-sdcard")
 		sim := crosspoint.NewSimulator(simDir, cfg.MockX3HTTPPort, cfg.MockX3WSPort)
 		if err := sim.Start(); err != nil {
-			log.Printf("warning: mock X3 simulator start: %v", err)
+			log.Printf("warning: mock CrossPoint simulator start: %v", err)
 		} else {
-			log.Printf("Xteink X3 CrossPoint Simulator listening on HTTP 127.0.0.1:%d, WebSocket 127.0.0.1:%d", cfg.MockX3HTTPPort, cfg.MockX3WSPort)
+			log.Printf("CrossPoint Reader Simulator listening on HTTP 127.0.0.1:%d, WebSocket 127.0.0.1:%d", cfg.MockX3HTTPPort, cfg.MockX3WSPort)
 		}
 	}
 
-	// Ensure default Xteink X3 device entries exist
+	// Ensure default CrossPoint Reader device entries exist
 	ensureDefaultDevices(store, cfg)
 
 	apiSrv := api.NewServer(store, cfg)
@@ -105,6 +105,12 @@ func withCORS(next http.Handler) http.Handler {
 }
 
 func ensureDefaultDevices(store *db.Store, cfg *config.Config) {
+	// Migrate previously seeded default Xteink X3 names/models to generic CrossPoint Reader
+	_, _ = store.Exec(`UPDATE devices SET name = 'CrossPoint Reader (crosspoint.local)' WHERE name = 'My Xteink X3 (crosspoint.local)'`)
+	_, _ = store.Exec(`UPDATE devices SET name = 'CrossPoint Reader (Local Simulator)' WHERE name = 'Xteink X3 (Local CrossPoint Simulator)'`)
+	_, _ = store.Exec(`UPDATE devices SET device_model = 'CrossPoint Reader' WHERE device_model = 'Xteink X3'`)
+	_, _ = store.Exec(`UPDATE reading_progress SET device = 'CrossPoint Reader' WHERE device = 'Xteink X3 (CrossPoint)'`)
+
 	existing, err := store.ListDevices()
 	if err != nil || len(existing) > 0 {
 		return
@@ -112,8 +118,8 @@ func ensureDefaultDevices(store *db.Store, cfg *config.Config) {
 
 	if cfg.EnableMockX3 {
 		_, _ = store.SaveDevice(&db.Device{
-			Name:              "Xteink X3 (Local CrossPoint Simulator)",
-			DeviceModel:       "Xteink X3",
+			Name:              "CrossPoint Reader (Local Simulator)",
+			DeviceModel:       "CrossPoint Reader",
 			Host:              "127.0.0.1",
 			HTTPPort:          cfg.MockX3HTTPPort,
 			WSPort:            cfg.MockX3WSPort,
@@ -124,8 +130,8 @@ func ensureDefaultDevices(store *db.Store, cfg *config.Config) {
 	}
 
 	_, _ = store.SaveDevice(&db.Device{
-		Name:              "My Xteink X3 (crosspoint.local)",
-		DeviceModel:       "Xteink X3",
+		Name:              "CrossPoint Reader (crosspoint.local)",
+		DeviceModel:       "CrossPoint Reader",
 		Host:              "crosspoint.local",
 		HTTPPort:          80,
 		WSPort:            81,
@@ -169,8 +175,8 @@ func seedSampleLibraryIfNeeded(store *db.Store, apiSrv *api.Server, cfg *config.
 				UserID:       u.ID,
 				DocumentHash: firstBook.KOMD5Partial,
 				BookID:       firstBook.ID,
-				Device:       "Xteink X3 (CrossPoint)",
-				DeviceID:     "crosspoint-x3",
+				Device:       "CrossPoint Reader",
+				DeviceID:     "crosspoint-reader",
 				Progress:     "/body/DocFragment[1]/body/section[1]/p[3]/text().0",
 				Percentage:   0.34,
 				Position: &db.CompactPosition{

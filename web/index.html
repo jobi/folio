@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Folio — Self-Hosted EPUB Library, Web Reader &amp; Xteink X3 Companion</title>
-  <meta name="description" content="Open-source self-hosted EPUB library manager with metadata &amp; cover editor, KOReader/CrossPoint progress sync, OPDS 1.2/2.0 catalog, web reader, and Xteink X3 wireless push." />
+  <title>Folio — Self-Hosted EPUB Library, Web Reader &amp; CrossPoint Companion</title>
+  <meta name="description" content="Open-source self-hosted EPUB library manager with metadata &amp; cover editor, KOReader/CrossPoint progress sync, OPDS 1.2/2.0 catalog, web reader, and CrossPoint Reader wireless push." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -95,7 +95,7 @@
         <button class="hardware-card-btn" id="btn-open-x3-hub">
           <div class="hw-card-top">
             <span class="hw-dot online" id="sidebar-x3-dot"></span>
-            <span class="hw-title">Xteink X3 Companion</span>
+            <span class="hw-title">CrossPoint Reader</span>
             <span class="hw-tag">CrossPoint</span>
           </div>
           <div class="hw-card-meta" id="sidebar-x3-summary">WS Port 81 &bull; HTTP Port 80</div>
@@ -166,12 +166,12 @@
             </button>
           </div>
 
-          <input type="file" id="epub-file-input" accept=".epub,application/epub+zip" multiple class="hidden" />
-          <button id="btn-upload-epub" class="btn btn-primary">
+          <input type="file" id="epub-file-input" accept=".epub" multiple="multiple" class="sr-only" />
+          <button id="btn-upload-epub" class="btn btn-primary" title="Select one or more EPUB files to import (or drag &amp; drop anywhere)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
               <path d="M12 5v14M5 12h14" />
             </svg>
-            Import EPUB
+            <span id="btn-upload-epub-label">Import EPUBs</span>
           </button>
         </div>
       </header>
@@ -195,9 +195,9 @@
             <span class="proto-dot"></span>
             KOReader Sync Ready
           </button>
-          <button class="proto-chip proto-chip-accent" id="chip-x3" title="Push books to Xteink X3 with CrossPoint Reader">
+          <button class="proto-chip proto-chip-accent" id="chip-x3" title="Push books to CrossPoint Reader">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-            Xteink X3 Push
+            CrossPoint Push
           </button>
         </div>
       </div>
@@ -255,7 +255,7 @@
             </button>
             <button type="button" id="btn-drawer-push-x3" class="btn btn-secondary btn-block">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-              Push to Xteink X3
+              Push to CrossPoint Reader
             </button>
             <a id="btn-drawer-download" href="#" class="btn btn-ghost btn-block" download>
               Download .EPUB File
@@ -341,7 +341,7 @@
             <input type="text" id="meta-isbn" class="form-input mono-input" />
           </div>
           <div class="form-group">
-            <label for="meta-filename">EPUB Filename (for X3 / OPDS)</label>
+            <label for="meta-filename">EPUB Filename (for CrossPoint / OPDS)</label>
             <input type="text" id="meta-filename" class="form-input mono-input" />
           </div>
         </div>
@@ -406,8 +406,8 @@
         <button id="btn-reader-bookmark" class="btn btn-sm btn-ghost" title="Bookmark Current Position">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
         </button>
-        <button id="btn-reader-push-x3" class="btn btn-sm btn-secondary" title="Send this book to Xteink X3">
-          Push to X3
+        <button id="btn-reader-push-x3" class="btn btn-sm btn-secondary" title="Send this book to CrossPoint Reader">
+          Push to CrossPoint
         </button>
         <button id="btn-reader-typo" class="btn btn-sm btn-secondary">
           Aa
@@ -490,13 +490,13 @@
     </footer>
   </section>
 
-  <!-- Xteink X3 with CrossPoint Reader Companion Modal -->
+  <!-- CrossPoint Reader Companion Modal -->
   <div id="x3-modal-backdrop" class="modal-backdrop hidden">
     <div class="modal-dialog modal-lg" role="dialog" aria-labelledby="x3-modal-title">
       <div class="modal-header">
         <div>
           <span class="drawer-eyebrow">WIRELESS E-READER COMPANION</span>
-          <h2 id="x3-modal-title" class="drawer-title">Xteink X3 &mdash; CrossPoint Reader</h2>
+          <h2 id="x3-modal-title" class="drawer-title">CrossPoint Reader Companion</h2>
         </div>
         <button id="btn-close-x3-modal" class="icon-btn" aria-label="Close Modal">&times;</button>
       </div>
@@ -516,7 +516,7 @@
               Probe Status
             </button>
             <button type="button" id="btn-x3-toggle-add" class="btn btn-sm btn-ghost">
-              + Add / Edit X3
+              + Add / Edit Device
             </button>
           </div>
         </div>
@@ -527,7 +527,7 @@
           <div class="form-row-4">
             <div class="form-group">
               <label for="x3-form-name">Device Name</label>
-              <input type="text" id="x3-form-name" class="form-input" placeholder="My Pocket Xteink X3" required />
+              <input type="text" id="x3-form-name" class="form-input" placeholder="My CrossPoint Reader" required />
             </div>
             <div class="form-group">
               <label for="x3-form-host">Hostname or IP</label>
@@ -571,7 +571,7 @@
           </div>
           <div class="telemetry-item">
             <span class="telemetry-label">HARDWARE</span>
-            <span id="x3-stat-device" class="telemetry-val mono-val">X3 (ESP32-C3)</span>
+            <span id="x3-stat-device" class="telemetry-val mono-val">CrossPoint Reader</span>
           </div>
           <div class="telemetry-item">
             <span class="telemetry-label">FIRMWARE</span>
@@ -586,18 +586,18 @@
             <span id="x3-stat-heap" class="telemetry-val mono-val">160 KB</span>
           </div>
           <div class="telemetry-item">
-            <button type="button" id="btn-x3-provision-opds" class="btn btn-xs btn-secondary" title="Register this Folio server's OPDS feed &amp; KOReader Sync URL onto the Xteink X3">
-              Save OPDS &amp; Sync to X3
+            <button type="button" id="btn-x3-provision-opds" class="btn btn-xs btn-secondary" title="Register this Folio server's OPDS feed &amp; KOReader Sync URL onto CrossPoint Reader">
+              Save OPDS &amp; Sync to Device
             </button>
           </div>
         </div>
 
         <div class="x3-split-grid">
-          <!-- Left Column: Push Book to Xteink X3 -->
+          <!-- Left Column: Push Book to CrossPoint Reader -->
           <div class="x3-panel">
-            <h3 class="panel-heading">Push EPUB Book to Xteink X3</h3>
+            <h3 class="panel-heading">Push EPUB Book to CrossPoint Reader</h3>
             <p class="panel-desc">
-              Streams the EPUB over Wi-Fi while CrossPoint Reader is in <strong>File Transfer</strong> or <strong>Calibre Wireless</strong> mode, automatically marking the X3 library index for refresh.
+              Streams the EPUB over Wi-Fi while CrossPoint Reader is in <strong>File Transfer</strong> or <strong>Calibre Wireless</strong> mode, automatically marking the device library index for refresh.
             </p>
 
             <div class="form-group">
@@ -617,7 +617,7 @@
                   <option value="websocket">CrossPoint WebSocket Fast Upload (:81)</option>
                   <option value="http">CrossPoint HTTP Multipart (/upload)</option>
                   <option value="webdav">CrossPoint WebDAV (PUT)</option>
-                  <option value="browser">Browser-Direct (Local LAN / X3 Hotspot)</option>
+                  <option value="browser">Browser-Direct (Local LAN / Device Hotspot)</option>
                 </select>
               </div>
             </div>
@@ -625,7 +625,7 @@
             <div class="x3-push-cta-row">
               <button type="button" id="btn-execute-push" class="btn btn-primary btn-block">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                Push EPUB to Xteink X3 Now
+                Push EPUB to CrossPoint Reader
               </button>
             </div>
 
@@ -635,21 +635,21 @@
                 <span>TRANSFER PROTOCOL TRACE</span>
                 <span id="x3-transfer-badge" class="mono-val">Ready</span>
               </div>
-              <pre id="x3-protocol-log" class="x3-protocol-log">Select a book and click "Push EPUB to Xteink X3 Now" to stream over WebSocket (:81) or HTTP (:80).</pre>
+              <pre id="x3-protocol-log" class="x3-protocol-log">Select a book and click "Push EPUB to CrossPoint Reader" to stream over WebSocket (:81) or HTTP (:80).</pre>
             </div>
           </div>
 
-          <!-- Right Column: Live SD Card File Browser on Xteink X3 -->
+          <!-- Right Column: Live SD Card File Browser on CrossPoint Reader -->
           <div class="x3-panel">
             <div class="panel-heading-row">
-              <h3 class="panel-heading">Xteink X3 SD Card Browser</h3>
+              <h3 class="panel-heading">CrossPoint SD Card Browser</h3>
               <div class="sd-path-controls">
                 <code id="x3-current-sd-path" class="mono-pill">/Books</code>
                 <button type="button" id="btn-x3-refresh-files" class="btn btn-xs btn-ghost">Refresh</button>
               </div>
             </div>
             <p class="panel-desc">
-              Live view of <code>GET /api/files</code> on your Xteink X3 microSD card.
+              Live view of <code>GET /api/files</code> on your CrossPoint Reader microSD card.
             </p>
             <div id="x3-sd-file-list" class="x3-sd-file-list"></div>
           </div>
@@ -789,7 +789,7 @@
           <div class="x3-panel">
             <h3 class="panel-heading">Linked Tailscale Account &amp; E-Reader Sync Key</h3>
             <p class="panel-desc">
-              Folio automatically authenticates your browser via <strong>Tailscale Serve</strong> (<code>Tailscale-User-Login</code>) or the local <strong>tailscaled WhoIs API</strong> (<code>/localapi/v0/whois</code>). Because the ESP32-C3 on the <strong>Xteink X3</strong> cannot run a full <code>tailscaled</code> daemon directly, your Tailscale user is paired with a dedicated KOReader sync passkey.
+              Folio automatically authenticates your browser via <strong>Tailscale Serve</strong> (<code>Tailscale-User-Login</code>) or the local <strong>tailscaled WhoIs API</strong> (<code>/localapi/v0/whois</code>). Because microcontroller e-readers running <strong>CrossPoint Reader</strong> cannot run a full <code>tailscaled</code> daemon directly, your Tailscale user is paired with a dedicated KOReader sync passkey.
             </p>
 
             <div class="endpoint-box">

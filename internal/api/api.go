@@ -378,7 +378,11 @@ func (s *Server) ImportEPUBFile(epubPath, originalFileName string, fileSize int6
 		if ext == "" {
 			ext = ".png"
 		}
-		coverPath = filepath.Join(coversDir, uuid+ext)
+		coverFilePrefix := sanitizeFilename(uuid)
+		if coverFilePrefix == "" {
+			coverFilePrefix = randomUUID()
+		}
+		coverPath = filepath.Join(coversDir, coverFilePrefix+ext)
 		_ = os.WriteFile(coverPath, parsed.CoverBytes, 0o644)
 	}
 

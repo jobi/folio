@@ -1064,7 +1064,7 @@ func (s *Store) SaveDevice(d *Device) (*Device, error) {
 		d.PreferredProtocol = "auto"
 	}
 	if d.DeviceModel == "" {
-		d.DeviceModel = "Xteink X3"
+		d.DeviceModel = "CrossPoint Reader"
 	}
 
 	isDef := 0

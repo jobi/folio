@@ -60,7 +60,7 @@ type PushResult struct {
 	Message    string   `json:"message"`
 }
 
-// Client communicates with an Xteink X3/X4 running CrossPoint Reader firmware.
+// Client communicates with a CrossPoint Reader device.
 type Client struct {
 	HTTPClient *http.Client
 }
@@ -98,7 +98,7 @@ func (c *Client) GetStatus(host string, httpPort int) (*DeviceStatus, string, er
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(endpoint)
 	if err != nil {
-		return nil, "", fmt.Errorf("connect to %s: %w (ensure Xteink X3 is in File Transfer or Calibre Wireless mode)", endpoint, err)
+		return nil, "", fmt.Errorf("connect to %s: %w (ensure CrossPoint Reader is in File Transfer or Calibre Wireless mode)", endpoint, err)
 	}
 	defer resp.Body.Close()
 

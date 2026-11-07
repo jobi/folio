@@ -351,7 +351,7 @@ func (sim *Simulator) handleSettings(w http.ResponseWriter, r *http.Request) {
 			},
 			{
 				"key":      "tiltPageTurn",
-				"name":     "Tilt Page Turn (X3 Gyroscope)",
+				"name":     "Tilt Page Turn (Gyroscope)",
 				"category": "Reader",
 				"type":     "toggle",
 				"value":    sim.Settings["tiltPageTurn"],
@@ -403,7 +403,7 @@ func (sim *Simulator) handleWebDAVOrRoot(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "CrossPoint Reader v1.6.0 (Simulated Xteink X3) — File Transfer Active\n")
+	_, _ = fmt.Fprintf(w, "CrossPoint Reader v1.6.0 (Simulated) — File Transfer Active\n")
 }
 
 // handleWSUpload implements the exact CrossPoint Reader WebSocket Fast Upload server protocol on port 81/18081:
@@ -521,7 +521,7 @@ func (sim *Simulator) runUDPDiscovery() {
 		}
 		msg := strings.TrimSpace(string(buf[:n]))
 		if msg == "hello" {
-			reply := fmt.Sprintf("crosspoint (on xteink-x3.local);%d", sim.WSPort)
+			reply := fmt.Sprintf("crosspoint (on crosspoint.local);%d", sim.WSPort)
 			_, _ = conn.WriteToUDP([]byte(reply), raddr)
 		}
 	}

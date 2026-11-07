@@ -235,7 +235,7 @@ func (s *Store) Migrate() error {
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS devices (
 			id %s,
 			name TEXT NOT NULL,
-			device_model TEXT NOT NULL DEFAULT 'Xteink X3',
+			device_model TEXT NOT NULL DEFAULT 'CrossPoint Reader',
 			host TEXT NOT NULL,
 			http_port INTEGER NOT NULL DEFAULT 80,
 			ws_port INTEGER NOT NULL DEFAULT 81,
