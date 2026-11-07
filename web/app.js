@@ -1,5 +1,5 @@
 // ============================================================================
-// FOLIO — Self-Hosted EPUB Library, Web Reader, KOReader Sync & Xteink X3 UI
+// FOLIO — Self-Hosted EPUB Library, Web Reader, KOReader Sync & CrossPoint UI
 // ============================================================================
 
 const state = {
@@ -265,7 +265,7 @@ function renderBooks() {
         }
         <div class="book-card-actions">
           <button type="button" class="card-action-pill" data-action="read" data-id="${book.id}">Read</button>
-          <button type="button" class="card-action-pill" data-action="push" data-id="${book.id}">Push X3</button>
+          <button type="button" class="card-action-pill" data-action="push" data-id="${book.id}" title="Push to CrossPoint Reader">Push</button>
           <button type="button" class="card-action-pill" data-action="edit" data-id="${book.id}">Edit</button>
         </div>
       </div>
@@ -322,7 +322,7 @@ function renderBooks() {
       <td><code class="mono-pill">${escapeHTML((book.ko_md5_partial || '').slice(0, 12))}…</code></td>
       <td class="text-right">
         <button type="button" class="btn btn-xs btn-primary tbl-btn-read">Read</button>
-        <button type="button" class="btn btn-xs btn-secondary tbl-btn-push">Push X3</button>
+        <button type="button" class="btn btn-xs btn-secondary tbl-btn-push" title="Push to CrossPoint Reader">Push</button>
         <button type="button" class="btn btn-xs btn-ghost tbl-btn-edit">Metadata</button>
       </td>
     `;
@@ -403,37 +403,124 @@ function bindNavigationEvents() {
   });
 
   const fileInput = document.getElementById('epub-file-input');
-  document.getElementById('btn-upload-epub').addEventListener('click', () => fileInput.click());
+  fileInput.multiple = true;
+  fileInput.setAttribute('multiple', 'multiple');
+
+  document.getElementById('btn-upload-epub').addEventListener('click', () => {
+    fileInput.multiple = true;
+    fileInput.setAttribute('multiple', 'multiple');
+    fileInput.click();
+  });
+
   fileInput.addEventListener('change', async () => {
     if (fileInput.files && fileInput.files.length > 0) {
-      await uploadEPUBFiles(fileInput.files);
+      const selectedFiles = Array.from(fileInput.files);
       fileInput.value = '';
+      await uploadEPUBFiles(selectedFiles);
     }
   });
 }
 
 async function uploadEPUBFiles(fileList) {
-  const formData = new FormData();
-  for (const f of fileList) {
-    formData.append('files', f);
-  }
-  showToast(`Importing ${fileList.length} EPUB volume(s)...`);
+  const files = Array.from(fileList || []).filter((f) => f && f.name);
+  if (files.length === 0) return;
+
+  const btn = document.getElementById('btn-upload-epub');
+  const labelEl = document.getElementById('btn-upload-epub-label');
+  const origLabel = labelEl ? labelEl.textContent : 'Import EPUBs';
+  if (btn) btn.disabled = true;
+
+  showToast(`Importing ${files.length} EPUB volume(s)...`);
+
+  let totalImported = 0;
+  const allErrors = [];
+
   try {
-    const res = await fetch('/api/books/upload', {
-      method: 'POST',
-      body: formData,
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      showToast(`Upload error: ${data.error || 'Unknown error'}`);
-      return;
+    for (let i = 0; i < files.length; i++) {
+      if (labelEl) {
+        labelEl.textContent = files.length > 1 ? `Importing ${i + 1}/${files.length}...` : 'Importing...';
+      }
+      const formData = new FormData();
+      formData.append('files', files[i]);
+      const res = await fetch('/api/books/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        allErrors.push(`${files[i].name}: ${data.error || 'Upload failed'}`);
+        continue;
+      }
+      totalImported += (data.imported || []).length;
+      if (Array.isArray(data.errors) && data.errors.length > 0) {
+        allErrors.push(...data.errors);
+      }
     }
-    const count = (data.imported || []).length;
-    showToast(`Imported ${count} EPUB book(s) with cover & KOReader MD5 hashes!`);
+
+    if (totalImported > 0) {
+      showToast(`Imported ${totalImported} EPUB book(s) with cover & KOReader MD5 hashes!`);
+    }
+    if (allErrors.length > 0) {
+      showToast(`Note: ${allErrors.join('; ')}`);
+    }
     await refreshAll();
   } catch (err) {
     showToast(`Upload failed: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+    if (labelEl) labelEl.textContent = origLabel;
   }
+}
+
+async function collectDroppedEPUBFiles(dataTransfer) {
+  if (!dataTransfer) return [];
+  if (dataTransfer.items && dataTransfer.items.length > 0) {
+    const entries = [];
+    for (const item of Array.from(dataTransfer.items)) {
+      if (item.kind === 'file' && typeof item.webkitGetAsEntry === 'function') {
+        const entry = item.webkitGetAsEntry();
+        if (entry) entries.push(entry);
+      }
+    }
+    if (entries.length > 0) {
+      const collected = [];
+      const readEntry = (entry) =>
+        new Promise((resolve) => {
+          if (entry.isFile) {
+            entry.file(
+              (file) => {
+                if (file.name.toLowerCase().endsWith('.epub')) {
+                  collected.push(file);
+                }
+                resolve();
+              },
+              () => resolve()
+            );
+          } else if (entry.isDirectory) {
+            const reader = entry.createReader();
+            const readBatch = () => {
+              reader.readEntries(
+                async (batch) => {
+                  if (!batch || batch.length === 0) {
+                    resolve();
+                    return;
+                  }
+                  await Promise.all(batch.map(readEntry));
+                  readBatch();
+                },
+                () => resolve()
+              );
+            };
+            readBatch();
+          } else {
+            resolve();
+          }
+        });
+      await Promise.all(entries.map(readEntry));
+      if (collected.length > 0) return collected;
+    }
+  }
+  return Array.from(dataTransfer.files || []);
 }
 
 function bindDragAndDropUpload() {
@@ -458,8 +545,9 @@ function bindDragAndDropUpload() {
     e.preventDefault();
     dragDepth = 0;
     overlay.classList.add('hidden');
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      await uploadEPUBFiles(e.dataTransfer.files);
+    const files = await collectDroppedEPUBFiles(e.dataTransfer);
+    if (files.length > 0) {
+      await uploadEPUBFiles(files);
     }
   });
 }
@@ -1005,7 +1093,7 @@ function applyReaderTypography() {
   document.getElementById('reader-font-size-val').textContent = `${state.reader.fontSize}px`;
 }
 
-// --- Xteink X3 with CrossPoint Reader Companion ---
+// --- CrossPoint Reader Companion ---
 
 async function loadDevices() {
   try {
@@ -1074,13 +1162,13 @@ async function probeSelectedX3Device() {
       const st = data.status;
       onlineEl.textContent = 'Online (File Transfer Ready)';
       onlineEl.className = 'telemetry-val status-online';
-      document.getElementById('x3-stat-device').textContent = `Xteink ${st.device || 'X3'} (ESP32-C3)`;
+      document.getElementById('x3-stat-device').textContent = st.device ? `CrossPoint (${st.device})` : 'CrossPoint Reader';
       document.getElementById('x3-stat-fw').textContent = `${st.firmwareFamily || 'crosspoint'} v${st.version}`;
       document.getElementById('x3-stat-wifi').textContent = `${st.mode} (${st.rssi} dBm)`;
       document.getElementById('x3-stat-heap').textContent = `${Math.round((st.freeHeap || 0) / 1024)} KB`;
       document.getElementById('sidebar-x3-dot').classList.add('online');
     } else {
-      onlineEl.textContent = 'Unreachable (Enable File Transfer on X3)';
+      onlineEl.textContent = 'Unreachable (Enable File Transfer on device)';
       onlineEl.className = 'telemetry-val status-offline';
     }
   } catch (err) {
@@ -1110,7 +1198,7 @@ async function loadSelectedX3Files() {
     if (files.length === 0) {
       listEl.innerHTML = `<div style="padding:14px; color:var(--text-muted); font-size:12.5px;">Folder <code>${escapeHTML(
         targetDir
-      )}</code> is empty on the Xteink X3 SD card. Push a book to see it here!</div>`;
+      )}</code> is empty on the CrossPoint Reader SD card. Push a book to see it here!</div>`;
       return;
     }
 
@@ -1142,7 +1230,7 @@ async function loadSelectedX3Files() {
             body: JSON.stringify({ path: fullPath }),
           });
           if (delRes.ok) {
-            showToast(`Deleted ${f.name} from Xteink X3 SD card.`);
+            showToast(`Deleted ${f.name} from CrossPoint Reader SD card.`);
             await loadSelectedX3Files();
           }
         });
@@ -1190,7 +1278,7 @@ function bindX3ModalEvents() {
     const data = await res.json();
     const list = data.discovered || [];
     if (list.length === 0) {
-      logEl.textContent = 'No CrossPoint Reader response on UDP 8134. Ensure File Transfer mode is open on your X3.';
+      logEl.textContent = 'No CrossPoint Reader response on UDP 8134. Ensure File Transfer mode is open on your device.';
       showToast('No additional CrossPoint devices discovered on UDP.');
     } else {
       const lines = list.map((d) => `Discovered: ${d.hostname} at ${d.host} (HTTP :${d.http_port}, WS :${d.ws_port}) -> "${d.raw_reply}"`);
@@ -1217,7 +1305,7 @@ function bindX3ModalEvents() {
       ws_port: parseInt(document.getElementById('x3-form-ws-port').value, 10) || 81,
       target_path: document.getElementById('x3-form-path').value || '/Books',
       preferred_protocol: document.getElementById('x3-form-proto').value || 'auto',
-      device_model: 'Xteink X3',
+      device_model: 'CrossPoint Reader',
       is_default: true,
     };
     const res = await fetch('/api/devices', {
@@ -1236,7 +1324,7 @@ function bindX3ModalEvents() {
     }
   });
 
-  // Push EPUB to Xteink X3
+  // Push EPUB to CrossPoint Reader
   document.getElementById('btn-execute-push').addEventListener('click', async () => {
     const devId = Number(document.getElementById('x3-device-select').value);
     const bookId = Number(document.getElementById('x3-push-book-select').value);
@@ -1244,16 +1332,16 @@ function bindX3ModalEvents() {
     const protocol = document.getElementById('x3-push-protocol').value || 'auto';
 
     if (!devId || !bookId) {
-      showToast('Select both a target Xteink X3 device and a book.');
+      showToast('Select both a target CrossPoint Reader device and a book.');
       return;
     }
 
     const logEl = document.getElementById('x3-protocol-log');
     const badgeEl = document.getElementById('x3-transfer-badge');
     badgeEl.textContent = 'Streaming...';
-    logEl.textContent = `Initiating ${protocol.toUpperCase()} upload to Xteink X3 (${targetPath})...`;
+    logEl.textContent = `Initiating ${protocol.toUpperCase()} upload to CrossPoint Reader (${targetPath})...`;
 
-    // Browser-Direct mode (useful when Folio runs in cloud/Docker and browser is on local Wi-Fi with X3)
+    // Browser-Direct mode (useful when Folio runs in cloud/Docker and browser is on local Wi-Fi with the device)
     if (protocol === 'browser') {
       await pushBrowserDirectToX3(devId, bookId, targetPath, logEl, badgeEl);
       return;
@@ -1274,7 +1362,7 @@ function bindX3ModalEvents() {
       if (!res.ok) {
         badgeEl.textContent = 'Error';
         logEl.textContent = `ERROR: ${data.error || 'Upload failed'}`;
-        showToast(`X3 Push Error: ${data.error}`);
+        showToast(`CrossPoint Push Error: ${data.error}`);
         return;
       }
 
@@ -1289,7 +1377,7 @@ function bindX3ModalEvents() {
     }
   });
 
-  // One-click OPDS & KOSync provisioning onto the Xteink X3
+  // One-click OPDS & KOSync provisioning onto CrossPoint Reader
   document.getElementById('btn-x3-provision-opds').addEventListener('click', async () => {
     const devId = document.getElementById('x3-device-select').value;
     if (!devId) return;
@@ -1301,7 +1389,7 @@ function bindX3ModalEvents() {
     const data = await res.json();
     if (res.ok) {
       document.getElementById('x3-protocol-log').textContent = `POST /api/opds -> Registered "${data.catalog_url}"\nPOST /api/settings -> Set koServerUrl="${data.kosync_url}"\n✓ ${data.message}`;
-      showToast('Configured Folio OPDS catalog & KOReader Sync on Xteink X3!');
+      showToast('Configured Folio OPDS catalog & KOReader Sync on CrossPoint Reader!');
     } else {
       showToast(`Provisioning failed: ${data.error}`);
     }
@@ -1329,8 +1417,8 @@ async function pushBrowserDirectToX3(devId, bookId, targetPath, logEl, badgeEl) 
       throw new Error(upText || `HTTP ${upRes.status}`);
     }
     badgeEl.textContent = 'Browser-Direct OK';
-    logEl.textContent += `3. RX <- ${upText}\n✓ Browser-Direct transfer to Xteink X3 complete!`;
-    showToast(`Pushed "${book.title}" directly from browser to X3!`);
+    logEl.textContent += `3. RX <- ${upText}\n✓ Browser-Direct transfer to CrossPoint Reader complete!`;
+    showToast(`Pushed "${book.title}" directly from browser to CrossPoint Reader!`);
     await loadSelectedX3Files();
   } catch (err) {
     badgeEl.textContent = 'Browser Push Error';
@@ -1389,8 +1477,8 @@ function bindSyncModalEvents() {
         document: book.ko_md5_partial,
         progress: xpath,
         percentage: nextPct,
-        device: 'Xteink X3 (CrossPoint)',
-        device_id: 'crosspoint-x3',
+        device: 'CrossPoint Reader',
+        device_id: 'crosspoint-reader',
         position: {
           pctQ: Math.round(nextPct * 1000000),
           spine: 1,
@@ -1407,7 +1495,7 @@ function bindSyncModalEvents() {
       }),
     });
     if (res.ok) {
-      showToast(`Synced "${book.title}" to ${(nextPct * 100).toFixed(1)}% from Xteink X3 (CrossPoint)!`);
+      showToast(`Synced "${book.title}" to ${(nextPct * 100).toFixed(1)}% from CrossPoint Reader!`);
       await refreshAll();
     }
   });
@@ -1464,8 +1552,14 @@ function renderTailscaleSession(ts) {
   const chipLabel = document.getElementById('chip-tailscale-label');
   const authBadge = document.getElementById('sys-auth-badge');
 
-  if (sidebarUser) sidebarUser.textContent = login;
-  if (sidebarSummary) sidebarSummary.textContent = `${ip} • ${source}`;
+  if (sidebarUser) {
+    sidebarUser.textContent = login;
+    sidebarUser.title = login;
+  }
+  if (sidebarSummary) {
+    sidebarSummary.textContent = `${ip} • ${source}`;
+    sidebarSummary.title = `${ip} • ${source}`;
+  }
   if (chipLabel) chipLabel.textContent = `Tailscale: ${login}`;
   if (authBadge) authBadge.textContent = `Tailscale (${ts.auth_mode || 'auto'})`;
 
@@ -1610,7 +1704,7 @@ function bindTailscaleModalEvents() {
             data.password_md5
           )}</code>)`;
         }
-        showToast(`Rotated KOReader / X3 passkey! New passkey: ${data.plain_passkey}`);
+        showToast(`Rotated KOReader / CrossPoint passkey! New passkey: ${data.plain_passkey}`);
       }
     });
   }

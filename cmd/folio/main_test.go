@@ -53,7 +53,7 @@ func TestFolioEndToEnd(t *testing.T) {
 		t.Fatalf("ensure default user: %v", err)
 	}
 
-	// Start Xteink X3 CrossPoint Simulator on test ports
+	// Start CrossPoint Reader Simulator on test ports
 	simDir := filepath.Join(tmpDir, "mock-x3")
 	sim := crosspoint.NewSimulator(simDir, cfg.MockX3HTTPPort, cfg.MockX3WSPort)
 	if err := sim.Start(); err != nil {
@@ -136,8 +136,8 @@ func TestFolioEndToEnd(t *testing.T) {
 		"document":   firstBook.KOMD5Partial,
 		"progress":   "/body/DocFragment[2]/body/p[4]/text().0",
 		"percentage": 0.62,
-		"device":     "Xteink X3",
-		"device_id":  "x3-test",
+		"device":     "CrossPoint Reader",
+		"device_id":  "crosspoint-test",
 	}
 	putBytes, _ := json.Marshal(putBody)
 	reqPut, _ := http.NewRequest(http.MethodPut, ts.URL+"/syncs/progress", bytes.NewReader(putBytes))
@@ -182,7 +182,7 @@ func TestFolioEndToEnd(t *testing.T) {
 	}
 	opds2Resp.Body.Close()
 
-	// 6. Verify pushing book to Xteink X3 via CrossPoint WebSocket Fast Upload (port 19081) and HTTP Multipart (port 19080)
+	// 6. Verify pushing book to CrossPoint Reader via WebSocket Fast Upload (port 19081) and HTTP Multipart (port 19080)
 	devices, _ := store.ListDevices()
 	if len(devices) == 0 {
 		t.Fatalf("expected default devices")
@@ -196,14 +196,14 @@ func TestFolioEndToEnd(t *testing.T) {
 	})
 	pushResp, err := http.Post(ts.URL+fmt.Sprintf("/api/devices/%d/push", simDev.ID), "application/json", bytes.NewReader(pushPayload))
 	if err != nil || pushResp.StatusCode != http.StatusOK {
-		t.Fatalf("WebSocket push to X3 simulator failed: status=%v err=%v", pushResp.StatusCode, err)
+		t.Fatalf("WebSocket push to CrossPoint simulator failed: status=%v err=%v", pushResp.StatusCode, err)
 	}
 	pushResp.Body.Close()
 
-	// Verify the pushed EPUB exists on the simulated Xteink X3 SD card
+	// Verify the pushed EPUB exists on the simulated CrossPoint Reader SD card
 	pushedPath := filepath.Join(simDir, "Books", firstBook.FileName)
 	if _, err := os.Stat(pushedPath); err != nil {
-		t.Fatalf("expected pushed EPUB on X3 SD card at %s: %v", pushedPath, err)
+		t.Fatalf("expected pushed EPUB on CrossPoint SD card at %s: %v", pushedPath, err)
 	}
 
 	// 7. Verify Tailscale Authentication (Serve identity headers, user auto-provisioning, and strict mode)

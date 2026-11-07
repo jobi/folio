@@ -38,7 +38,7 @@ RUN set -eux; \
 FROM debian:bookworm-slim
 
 LABEL org.opencontainers.image.title="Folio" \
-      org.opencontainers.image.description="Self-hosted EPUB library manager, Web Reader, KOReader/CrossPoint progress sync, OPDS 1.2/2.0 catalog, Tailscale auth & Xteink X3 wireless companion" \
+      org.opencontainers.image.description="Self-hosted EPUB library manager, Web Reader, KOReader/CrossPoint progress sync, OPDS 1.2/2.0 catalog, Tailscale auth & CrossPoint Reader wireless companion" \
       org.opencontainers.image.licenses="MIT"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
