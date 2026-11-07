@@ -47,7 +47,7 @@ docker run -d \
   --name folio \
   -p 8080:8080 \
   -v folio_data:/data \
-  ghcr.io/<your-github-username>/folio:latest
+  ghcr.io/jobi/folio:latest
 ```
 
 Or using Docker Compose (SQLite default):
