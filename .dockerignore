@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+data/
+folio
+*.db
+*.db-shm
+*.db-wal
+*.log
+README.md
+LICENSE

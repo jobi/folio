@@ -1,0 +1,87 @@
+services:
+  folio:
+    image: ${FOLIO_IMAGE:-ghcr.io/folio-books/folio:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: folio
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: 8080
+      DATA_DIR: /data
+      # Database backend: "sqlite" (default) or "postgres"
+      DB_DRIVER: ${DB_DRIVER:-sqlite}
+      DB_DSN: ${DB_DSN:-/data/folio.db}
+      # Optional public base URL for OPDS feeds behind reverse proxies / Tailscale MagicDNS
+      BASE_URL: ${BASE_URL:-}
+      # Tailscale Zero-Trust Authentication:
+      # "auto" (uses tailscaled WhoIs or Tailscale Serve headers if present, dev fallback locally)
+      # "required" (strictly requires verified Tailscale identity for Web/API)
+      # "off" (disables Tailscale authentication)
+      TAILSCALE_AUTH_MODE: ${TAILSCALE_AUTH_MODE:-auto}
+      TS_SOCKET: ${TS_SOCKET:-/var/run/tailscale/tailscaled.sock}
+      TAILSCALE_TRUST_HEADERS: ${TAILSCALE_TRUST_HEADERS:-true}
+      TAILSCALE_ALLOWED_USERS: ${TAILSCALE_ALLOWED_USERS:-}
+      TAILSCALE_PROTECT_OPDS: ${TAILSCALE_PROTECT_OPDS:-false}
+      # Default KOReader / CrossPoint sync account created on first run
+      DEFAULT_SYNC_USER: ${DEFAULT_SYNC_USER:-reader}
+      DEFAULT_SYNC_PASSWORD: ${DEFAULT_SYNC_PASSWORD:-folio123}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      SEED_SAMPLE_BOOKS: ${SEED_SAMPLE_BOOKS:-true}
+      ENABLE_MOCK_X3: ${ENABLE_MOCK_X3:-false}
+    volumes:
+      - folio_data:/data
+      # Optional: mount host or sidecar tailscaled socket for LocalAPI WhoIs queries
+      - tailscale_sock:/var/run/tailscale
+
+  # Optional Tailscale Sidecar — joins your tailnet, serves HTTPS via `tailscale serve`,
+  # and injects verified `Tailscale-User-Login` headers into Folio.
+  # Run with: TS_AUTHKEY=tskey-auth-xxx docker compose --profile tailscale up -d
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: folio-tailscale
+    hostname: ${TS_HOSTNAME:-folio}
+    profiles: ["tailscale"]
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+      TS_SERVE_CONFIG: /config/tailscale-serve.json
+      TS_USERSPACE: "false"
+    volumes:
+      - folio_ts_state:/var/lib/tailscale
+      - tailscale_sock:/var/run/tailscale
+      - ./tailscale-serve.json:/config/tailscale-serve.json:ro
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+  # Optional PostgreSQL service — run with:
+  # DB_DRIVER=postgres DB_DSN=postgres://folio:folio@postgres:5432/folio?sslmode=disable docker compose --profile postgres up -d
+  postgres:
+    image: postgres:16-alpine
+    container_name: folio-postgres
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-folio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-folio}
+      POSTGRES_DB: ${POSTGRES_DB:-folio}
+    volumes:
+      - folio_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-folio}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  folio_data:
+  folio_pgdata:
+  folio_ts_state:
+  tailscale_sock:

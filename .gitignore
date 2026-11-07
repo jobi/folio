@@ -1,0 +1,22 @@
+# Compiled binaries & runtime data
+/folio
+/data/
+*.db
+*.db-shm
+*.db-wal
+*.log
+.env
+
+# Home directory / environment files (when repo root is $HOME)
+/.bash*
+/.profile
+/.cache/
+/.config/
+/.gemini
+/.gitconfig
+/.local/
+/.lesshst
+/.viminfo
+/go/
+/upload/
+
