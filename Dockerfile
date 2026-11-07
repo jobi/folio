@@ -2,8 +2,9 @@
 # ============================================================================
 # Stage 1: Build Go Binary (Supports native build + fast amd64 -> arm64 CGO cross-compile)
 # ============================================================================
-FROM --platform=$BUILDPLATFORM golang:1.23-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:bookworm AS builder
 
+ENV GOTOOLCHAIN=auto
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 ARG BUILDARCH=amd64

@@ -1,6 +1,6 @@
 services:
   folio:
-    image: ${FOLIO_IMAGE:-ghcr.io/folio-books/folio:latest}
+    image: ${FOLIO_IMAGE:-ghcr.io/jobi/folio:latest}
     build:
       context: .
       dockerfile: Dockerfile
