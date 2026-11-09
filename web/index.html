@@ -418,6 +418,13 @@
     <!-- Reader Typography Popover -->
     <div id="reader-typo-popover" class="reader-popover hidden">
       <div class="popover-section">
+        <span class="popover-label">READING MODE</span>
+        <div class="view-toggle-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+          <button type="button" id="btn-mode-paginated" class="theme-swatch active" data-reader-mode="paginated">Book (Paginated)</button>
+          <button type="button" id="btn-mode-scroll" class="theme-swatch" data-reader-mode="scroll">Continuous Scroll</button>
+        </div>
+      </div>
+      <div class="popover-section">
         <span class="popover-label">SURFACE THEME</span>
         <div class="theme-swatches">
           <button type="button" class="theme-swatch active" data-reader-theme="paper">Paper</button>
@@ -466,11 +473,24 @@
       </aside>
 
       <!-- Scrollable / Paginated Reading Canvas -->
-      <div id="reader-scroll-container" class="reader-scroll-container" data-reader-theme="paper">
+      <div id="reader-scroll-container" class="reader-scroll-container mode-paginated" data-reader-theme="paper">
         <style id="reader-chapter-custom-css"></style>
-        <article id="reader-article" class="reader-article"></article>
 
-        <div class="reader-chapter-nav-footer">
+        <!-- Floating Desktop Page Turn Arrows -->
+        <button type="button" id="btn-reader-prev-page" class="reader-page-arrow prev" aria-label="Previous Page" title="Previous Page (Left Arrow / Swipe Right)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <button type="button" id="btn-reader-next-page" class="reader-page-arrow next" aria-label="Next Page" title="Next Page (Right Arrow / Space / Swipe Left)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+
+        <div id="reader-page-viewport" class="reader-page-viewport">
+          <div id="reader-columns-slider" class="reader-columns-slider">
+            <article id="reader-article" class="reader-article"></article>
+          </div>
+        </div>
+
+        <div class="reader-chapter-nav-footer" id="reader-chapter-nav-footer">
           <button type="button" id="btn-prev-chapter" class="btn btn-secondary">&larr; Previous Chapter</button>
           <span id="reader-footer-pos" class="mono-val">0%</span>
           <button type="button" id="btn-next-chapter" class="btn btn-primary">Next Chapter &rarr;</button>
@@ -480,12 +500,18 @@
 
     <!-- Reader Bottom Scrubber Bar -->
     <footer class="reader-bottombar">
-      <div class="reader-progress-track">
+      <div class="reader-progress-track" id="reader-progress-track" title="Click to seek reading progress">
         <div id="reader-progress-fill" class="reader-progress-fill" style="width: 0%"></div>
       </div>
       <div class="reader-bottom-meta">
-        <span id="reader-xpath-display" class="mono-val">XPath: /body/DocFragment[1]/body/p[1]</span>
-        <span id="reader-percent-display" class="mono-val">0.0%</span>
+        <div class="reader-bottom-meta-left">
+          <span id="reader-page-indicator" class="reader-page-indicator mono-val">Page 1 of 1</span>
+          <span id="reader-chapter-footer-label" class="reader-chapter-footer-label"></span>
+        </div>
+        <div class="reader-bottom-meta-right">
+          <span id="reader-xpath-display" class="mono-val">XPath: /body/DocFragment[1]/body/p[1]</span>
+          <span id="reader-percent-display" class="mono-val">0.0%</span>
+        </div>
       </div>
     </footer>
   </section>

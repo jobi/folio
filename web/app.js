@@ -21,11 +21,16 @@ const state = {
     book: null,
     manifest: null,
     chapterIndex: 0,
+    pageIndex: 0,
+    totalPages: 1,
+    pageWidth: 0,
+    pageGap: 40,
+    mode: localStorage.getItem('folio_reader_mode') || 'paginated', // 'paginated' | 'scroll'
     bookmarks: [],
-    fontSize: 19,
-    fontFamily: 'serif',
-    theme: 'paper',
-    measure: '65ch',
+    fontSize: parseInt(localStorage.getItem('folio_reader_font_size'), 10) || 19,
+    fontFamily: localStorage.getItem('folio_reader_font_family') || 'serif',
+    theme: localStorage.getItem('folio_reader_theme') || 'paper',
+    measure: localStorage.getItem('folio_reader_measure') || '65ch',
     syncDebounceTimer: null,
   },
 };
@@ -741,10 +746,11 @@ async function openWebReader(bookId) {
     document.getElementById('reader-book-title').textContent = bookData.book.title;
     document.getElementById('web-reader-overlay').classList.remove('hidden');
 
+    initReaderPreferences();
     renderReaderTOC();
     renderReaderBookmarks();
 
-    // Check KOReader sync progress to resume at exact chapter & paragraph
+    // Check KOReader sync progress to resume at exact chapter & page
     let targetSpine = 0;
     let targetRatio = 0;
     const lp = bookData.book.latest_progress;
@@ -756,7 +762,6 @@ async function openWebReader(bookId) {
         if (fragMatch) {
           targetSpine = Math.max(0, parseInt(fragMatch[1], 10) - 1);
         } else {
-          // Locate chapter containing lp.percentage
           const foundIdx = manifest.chapters.findIndex(
             (ch) => lp.percentage >= ch.start_pct && lp.percentage <= ch.end_pct
           );
@@ -779,7 +784,7 @@ async function openWebReader(bookId) {
   }
 }
 
-async function loadReaderChapter(spineIndex, scrollRatio = 0) {
+async function loadReaderChapter(spineIndex, scrollRatio = 0, targetPageIndex = null) {
   const { book, manifest } = state.reader;
   if (!book || !manifest) return;
 
@@ -790,7 +795,7 @@ async function loadReaderChapter(spineIndex, scrollRatio = 0) {
   if (!res.ok) return;
   const chData = await res.json();
 
-  document.getElementById('reader-chapter-subtitle').textContent = chData.title;
+  document.getElementById('reader-chapter-subtitle').textContent = chData.title || `Chapter ${spineIndex + 1}`;
   document.getElementById('reader-chapter-custom-css').textContent = chData.styles || '';
   const article = document.getElementById('reader-article');
   article.innerHTML = chData.html;
@@ -800,7 +805,7 @@ async function loadReaderChapter(spineIndex, scrollRatio = 0) {
     a.addEventListener('click', (e) => {
       e.preventDefault();
       const idx = parseInt(a.getAttribute('data-spine-index'), 10);
-      loadReaderChapter(idx, 0);
+      loadReaderChapter(idx, 0, 0);
     });
   });
 
@@ -812,42 +817,211 @@ async function loadReaderChapter(spineIndex, scrollRatio = 0) {
     btn.classList.toggle('active', parseInt(btn.getAttribute('data-spine'), 10) === spineIndex);
   });
 
-  const scroller = document.getElementById('reader-scroll-container');
-  setTimeout(() => {
-    const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-    scroller.scrollTop = Math.round(maxScroll * scrollRatio);
-    updateReaderProgressMetrics(true);
-  }, 40);
+  if (state.reader.mode === 'paginated') {
+    setTimeout(() => {
+      updateReaderPaginationGeometry();
+      if (targetPageIndex === -1) {
+        goToPage(state.reader.totalPages - 1, false);
+      } else if (typeof targetPageIndex === 'number') {
+        goToPage(targetPageIndex, false);
+      } else if (scrollRatio > 0 && state.reader.totalPages > 1) {
+        const targetPage = Math.min(state.reader.totalPages - 1, Math.round(scrollRatio * (state.reader.totalPages - 1)));
+        goToPage(targetPage, false);
+      } else {
+        goToPage(0, false);
+      }
+    }, 40);
+  } else {
+    const scroller = document.getElementById('reader-scroll-container');
+    setTimeout(() => {
+      const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      scroller.scrollTop = Math.round(maxScroll * scrollRatio);
+      updateReaderProgressMetrics(true);
+    }, 40);
+  }
+}
+
+function updateReaderPaginationGeometry() {
+  if (state.reader.mode !== 'paginated') return;
+  const viewport = document.getElementById('reader-page-viewport');
+  const slider = document.getElementById('reader-columns-slider');
+  const article = document.getElementById('reader-article');
+  if (!viewport || !slider || !article) return;
+
+  const w = slider.clientWidth;
+  if (w <= 0) return;
+  const gap = w < 600 ? 24 : 40;
+
+  article.style.setProperty('--reader-col-width', `${w}px`);
+  article.style.setProperty('--reader-col-gap', `${gap}px`);
+
+  // Calculate total pages from columns
+  const sw = article.scrollWidth;
+  let total = 1;
+  if (sw > w + 2) {
+    total = Math.max(1, Math.ceil((sw - w) / (w + gap)) + 1);
+  }
+  state.reader.totalPages = total;
+  state.reader.pageWidth = w;
+  state.reader.pageGap = gap;
+  state.reader.pageIndex = Math.max(0, Math.min(total - 1, state.reader.pageIndex));
+}
+
+function goToPage(idx, animate = true) {
+  const { totalPages, pageWidth, pageGap, chapterIndex, manifest } = state.reader;
+  idx = Math.max(0, Math.min((totalPages || 1) - 1, idx));
+  state.reader.pageIndex = idx;
+
+  const slider = document.getElementById('reader-columns-slider');
+  if (slider && state.reader.mode === 'paginated') {
+    slider.style.transition = animate ? 'transform 0.26s cubic-bezier(0.2, 0, 0.2, 1)' : 'none';
+    const stride = (pageWidth || slider.clientWidth) + (pageGap || 40);
+    slider.style.transform = `translateX(-${idx * stride}px)`;
+  }
+
+  // Update floating page turn arrow states
+  const prevBtn = document.getElementById('btn-reader-prev-page');
+  const nextBtn = document.getElementById('btn-reader-next-page');
+  const atStart = chapterIndex <= 0 && idx <= 0;
+  const atEnd = chapterIndex >= ((manifest && manifest.chapters.length) || 1) - 1 && idx >= (totalPages - 1);
+  if (prevBtn) prevBtn.disabled = atStart;
+  if (nextBtn) nextBtn.disabled = atEnd;
+
+  updateReaderProgressMetrics(true);
+}
+
+function nextPage() {
+  if (state.reader.mode !== 'paginated') return;
+  const { pageIndex, totalPages, chapterIndex, manifest } = state.reader;
+  if (pageIndex < totalPages - 1) {
+    goToPage(pageIndex + 1, true);
+  } else if (manifest && chapterIndex < manifest.chapters.length - 1) {
+    loadReaderChapter(chapterIndex + 1, 0, 0);
+  } else {
+    showToast("You've reached the end of the book!");
+  }
+}
+
+function prevPage() {
+  if (state.reader.mode !== 'paginated') return;
+  const { pageIndex, chapterIndex } = state.reader;
+  if (pageIndex > 0) {
+    goToPage(pageIndex - 1, true);
+  } else if (chapterIndex > 0) {
+    loadReaderChapter(chapterIndex - 1, 1, -1);
+  }
+}
+
+function toggleReaderChrome() {
+  const overlay = document.getElementById('web-reader-overlay');
+  overlay.classList.toggle('chrome-hidden');
+  document.getElementById('reader-typo-popover').classList.add('hidden');
+  document.getElementById('reader-toc-sidebar').classList.add('hidden');
+}
+
+function setReaderMode(mode) {
+  state.reader.mode = mode;
+  localStorage.setItem('folio_reader_mode', mode);
+
+  const container = document.getElementById('reader-scroll-container');
+  if (!container) return;
+
+  if (mode === 'paginated') {
+    container.classList.remove('mode-scroll');
+    container.classList.add('mode-paginated');
+  } else {
+    container.classList.remove('mode-paginated');
+    container.classList.add('mode-scroll');
+  }
+
+  document.querySelectorAll('[data-reader-mode]').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-reader-mode') === mode);
+  });
+
+  applyReaderTypography();
+  if (mode === 'paginated') {
+    setTimeout(() => {
+      updateReaderPaginationGeometry();
+      goToPage(state.reader.pageIndex, false);
+    }, 40);
+  } else {
+    const slider = document.getElementById('reader-columns-slider');
+    if (slider) slider.style.transform = '';
+    const article = document.getElementById('reader-article');
+    if (article) {
+      article.style.removeProperty('--reader-col-width');
+      article.style.removeProperty('--reader-col-gap');
+    }
+    updateReaderProgressMetrics(false);
+  }
+}
+
+function seekToGlobalPercentage(targetPct) {
+  const { manifest } = state.reader;
+  if (!manifest || !manifest.chapters.length) return;
+  targetPct = Math.max(0, Math.min(1, targetPct));
+
+  const targetSpine = manifest.chapters.findIndex(
+    (ch) => targetPct >= ch.start_pct && targetPct <= ch.end_pct
+  );
+  const spineIdx = targetSpine >= 0 ? targetSpine : (targetPct >= 1 ? manifest.chapters.length - 1 : 0);
+  const ch = manifest.chapters[spineIdx];
+  const ratio = (ch.end_pct > ch.start_pct) ? Math.max(0, Math.min(1, (targetPct - ch.start_pct) / (ch.end_pct - ch.start_pct))) : 0;
+
+  loadReaderChapter(spineIdx, ratio);
 }
 
 function updateReaderProgressMetrics(syncToServer = false) {
-  const { book, manifest, chapterIndex } = state.reader;
+  const { book, manifest, chapterIndex, totalPages, pageIndex, mode } = state.reader;
   if (!book || !manifest || !manifest.chapters.length) return;
 
   const ch = manifest.chapters[chapterIndex];
-  const scroller = document.getElementById('reader-scroll-container');
-  const maxScroll = Math.max(1, scroller.scrollHeight - scroller.clientHeight);
-  const chapterRatio = Math.max(0, Math.min(1, scroller.scrollTop / maxScroll));
+  let chapterRatio = 0;
+  if (mode === 'paginated') {
+    chapterRatio = totalPages > 1 ? (pageIndex / (totalPages - 1)) : 0;
+  } else {
+    const scroller = document.getElementById('reader-scroll-container');
+    const maxScroll = Math.max(1, scroller.scrollHeight - scroller.clientHeight);
+    chapterRatio = Math.max(0, Math.min(1, scroller.scrollTop / maxScroll));
+  }
 
   const overallPct = ch.start_pct + chapterRatio * (ch.end_pct - ch.start_pct);
   const clampedPct = Math.max(0.001, Math.min(1, overallPct));
 
   // Estimate paragraph index inside chapter for KOReader XPath and CrossPoint CompactPosition
-  const paragraphs = document.querySelectorAll('#reader-article p, #reader-article h2, #reader-article li');
-  const paraIndex = Math.max(1, Math.min(paragraphs.length || 1, Math.round(chapterRatio * (paragraphs.length || 1)) + 1));
+  const paragraphs = document.querySelectorAll('#reader-article p, #reader-article h2, #reader-article h3, #reader-article li');
+  const totalParas = Math.max(1, paragraphs.length);
+  const paraIndex = Math.max(1, Math.min(totalParas, Math.round(chapterRatio * (totalParas - 1)) + 1));
   const docFrag = chapterIndex + 1;
   const xpath = `/body/DocFragment[${docFrag}]/body/section[1]/p[${paraIndex}]/text().0`;
 
   const pctDisplay = `${(clampedPct * 100).toFixed(1)}%`;
-  document.getElementById('reader-progress-fill').style.width = `${(clampedPct * 100).toFixed(1)}%`;
+  document.getElementById('reader-progress-fill').style.width = pctDisplay;
   document.getElementById('reader-percent-display').textContent = pctDisplay;
-  document.getElementById('reader-footer-pos').textContent = `Chapter ${docFrag}/${manifest.chapters.length} • ${pctDisplay}`;
+
+  const pageIndicator = document.getElementById('reader-page-indicator');
+  if (pageIndicator) {
+    if (mode === 'paginated') {
+      pageIndicator.textContent = `Page ${pageIndex + 1} of ${totalPages || 1}`;
+    } else {
+      pageIndicator.textContent = `Scroll View`;
+    }
+  }
+
+  const chFooterLabel = document.getElementById('reader-chapter-footer-label');
+  if (chFooterLabel) {
+    chFooterLabel.textContent = ch.title || `Chapter ${docFrag}`;
+  }
+
+  document.getElementById('reader-footer-pos').textContent = `Ch. ${docFrag}/${manifest.chapters.length} • ${pctDisplay}`;
   document.getElementById('reader-xpath-display').textContent = `KOSync XPath: ${xpath}`;
 
   if (syncToServer) {
     clearTimeout(state.reader.syncDebounceTimer);
     state.reader.syncDebounceTimer = setTimeout(() => {
-      pushReaderProgressToKOSync(clampedPct, xpath, chapterIndex, paraIndex, paragraphs.length || 10);
+      const activePageNum = mode === 'paginated' ? (pageIndex + 1) : paraIndex;
+      const totalPageCount = mode === 'paginated' ? (totalPages || 1) : totalParas;
+      pushReaderProgressToKOSync(clampedPct, xpath, chapterIndex, activePageNum, totalPageCount);
     }, 350);
   }
 }
@@ -908,7 +1082,7 @@ function renderReaderTOC() {
     btn.setAttribute('data-spine', item.spine_index);
     btn.textContent = item.title;
     btn.addEventListener('click', () => {
-      loadReaderChapter(item.spine_index, 0);
+      loadReaderChapter(item.spine_index, 0, 0);
     });
     list.appendChild(btn);
   });
@@ -934,10 +1108,169 @@ function renderReaderBookmarks() {
     )}</div>
     `;
     btn.addEventListener('click', () => {
-      loadReaderChapter(bm.si || 0, 0);
+      loadReaderChapter(bm.si || 0, 0, 0);
     });
     list.appendChild(btn);
   });
+}
+
+function bindReaderTouchAndSwipe() {
+  const container = document.getElementById('reader-scroll-container');
+  if (!container) return;
+
+  let startX = 0;
+  let startY = 0;
+  let startTime = 0;
+  let isTouching = false;
+  let isHorizontalMove = false;
+
+  container.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startTime = Date.now();
+    isTouching = true;
+    isHorizontalMove = false;
+  }, { passive: true });
+
+  container.addEventListener('touchmove', (e) => {
+    if (!isTouching || e.touches.length !== 1) return;
+    if (state.reader.mode !== 'paginated') return;
+
+    const curX = e.touches[0].clientX;
+    const curY = e.touches[0].clientY;
+    const dx = curX - startX;
+    const dy = curY - startY;
+
+    if (!isHorizontalMove) {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+        isHorizontalMove = true;
+      } else if (Math.abs(dy) > 10) {
+        isTouching = false;
+        return;
+      }
+    }
+
+    if (isHorizontalMove) {
+      if (e.cancelable) e.preventDefault();
+      const slider = document.getElementById('reader-columns-slider');
+      if (slider) {
+        const stride = (state.reader.pageWidth || slider.clientWidth) + (state.reader.pageGap || 40);
+        const base = -state.reader.pageIndex * stride;
+        const offset = dx * 0.35;
+        slider.style.transition = 'none';
+        slider.style.transform = `translateX(${base + offset}px)`;
+      }
+    }
+  }, { passive: false });
+
+  const handleTouchEnd = (e) => {
+    if (!isTouching) return;
+    isTouching = false;
+    if (state.reader.mode !== 'paginated') return;
+
+    const slider = document.getElementById('reader-columns-slider');
+    if (slider) slider.style.transition = 'transform 0.26s cubic-bezier(0.2, 0, 0.2, 1)';
+
+    const curX = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : startX;
+    const curY = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : startY;
+    const dx = curX - startX;
+    const dy = curY - startY;
+    const dt = Date.now() - startTime;
+
+    // Horizontal swipe threshold: distance > 35px or quick flick
+    const isSwipe = Math.abs(dx) > 35 || (dt < 250 && Math.abs(dx) > 20 && Math.abs(dx) > Math.abs(dy));
+    if (isSwipe && isHorizontalMove) {
+      if (dx < 0) {
+        nextPage();
+      } else {
+        prevPage();
+      }
+      return;
+    }
+
+    // Snap back
+    goToPage(state.reader.pageIndex, true);
+
+    // Tap zone detection
+    if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && dt < 400) {
+      const target = e.target;
+      if (target && target.closest('a, button, input, select, textarea')) return;
+      const sel = window.getSelection();
+      if (sel && sel.toString().trim().length > 0) return;
+
+      const vp = document.getElementById('reader-page-viewport') || container;
+      const rect = vp.getBoundingClientRect();
+      const relX = curX - rect.left;
+      const w = rect.width;
+
+      if (relX < w * 0.22) {
+        prevPage();
+      } else if (relX > w * 0.78) {
+        nextPage();
+      } else {
+        toggleReaderChrome();
+      }
+    }
+  };
+
+  container.addEventListener('touchend', handleTouchEnd);
+  container.addEventListener('touchcancel', () => {
+    isTouching = false;
+    goToPage(state.reader.pageIndex, true);
+  });
+}
+
+function bindReaderDesktopClicks() {
+  const vp = document.getElementById('reader-page-viewport');
+  if (!vp) return;
+  vp.addEventListener('click', (e) => {
+    if (state.reader.mode !== 'paginated') return;
+    if (e.target.closest('a, button, input, select, textarea')) return;
+    const sel = window.getSelection();
+    if (sel && sel.toString().trim().length > 0) return;
+
+    const rect = vp.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const w = rect.width;
+    if (relX < w * 0.18) {
+      prevPage();
+    } else if (relX > w * 0.82) {
+      nextPage();
+    } else {
+      toggleReaderChrome();
+    }
+  });
+}
+
+function initReaderPreferences() {
+  const savedMode = localStorage.getItem('folio_reader_mode') || 'paginated';
+  const savedTheme = localStorage.getItem('folio_reader_theme') || 'paper';
+  const savedFont = localStorage.getItem('folio_reader_font_family') || 'serif';
+  const savedMeasure = localStorage.getItem('folio_reader_measure') || '65ch';
+
+  state.reader.mode = savedMode;
+  state.reader.theme = savedTheme;
+  state.reader.fontFamily = savedFont;
+  state.reader.measure = savedMeasure;
+
+  document.querySelectorAll('[data-reader-theme]').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-reader-theme') === savedTheme);
+  });
+  document.getElementById('reader-scroll-container').setAttribute('data-reader-theme', savedTheme);
+
+  document.querySelectorAll('[data-reader-font]').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-reader-font') === savedFont);
+  });
+  const fontMap = {
+    serif: "var(--font-serif)",
+    classic: "Georgia, 'Times New Roman', serif",
+    sans: "var(--font-sans)",
+    mono: "var(--font-mono)",
+  };
+  document.getElementById('reader-article').style.fontFamily = fontMap[savedFont] || fontMap.serif;
+
+  setReaderMode(savedMode);
 }
 
 function bindReaderEvents() {
@@ -966,16 +1299,38 @@ function bindReaderEvents() {
   });
 
   document.getElementById('btn-prev-chapter').addEventListener('click', () => {
-    loadReaderChapter(state.reader.chapterIndex - 1, 0);
+    loadReaderChapter(state.reader.chapterIndex - 1, 0, 0);
   });
 
   document.getElementById('btn-next-chapter').addEventListener('click', () => {
-    loadReaderChapter(state.reader.chapterIndex + 1, 0);
+    loadReaderChapter(state.reader.chapterIndex + 1, 0, 0);
+  });
+
+  document.getElementById('btn-reader-prev-page').addEventListener('click', (e) => {
+    e.stopPropagation();
+    prevPage();
+  });
+
+  document.getElementById('btn-reader-next-page').addEventListener('click', (e) => {
+    e.stopPropagation();
+    nextPage();
   });
 
   document.getElementById('reader-scroll-container').addEventListener('scroll', () => {
-    updateReaderProgressMetrics(true);
+    if (state.reader.mode === 'scroll') {
+      updateReaderProgressMetrics(true);
+    }
   });
+
+  document.getElementById('reader-progress-track').addEventListener('click', (e) => {
+    const track = document.getElementById('reader-progress-track');
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    seekToGlobalPercentage(ratio);
+  });
+
+  bindReaderTouchAndSwipe();
+  bindReaderDesktopClicks();
 
   document.getElementById('btn-reader-sync-now').addEventListener('click', () => {
     updateReaderProgressMetrics(true);
@@ -983,20 +1338,21 @@ function bindReaderEvents() {
   });
 
   document.getElementById('btn-reader-bookmark').addEventListener('click', async () => {
-    const { book, manifest, chapterIndex } = state.reader;
+    const { book, manifest, chapterIndex, pageIndex, totalPages, mode } = state.reader;
     if (!book || !manifest) return;
     const ch = manifest.chapters[chapterIndex];
     const xpathText = document.getElementById('reader-xpath-display').textContent.replace('KOSync XPath: ', '');
     const pctText = document.getElementById('reader-percent-display').textContent.replace('%', '');
     const pct = (parseFloat(pctText) || 0) / 100.0;
+    const pageStr = mode === 'paginated' ? ` (p. ${pageIndex + 1}/${totalPages})` : '';
 
     const bmItem = {
       xpath: xpathText,
       percentage: pct,
-      summary: `${ch.title} (${(pct * 100).toFixed(1)}%)`,
+      summary: `${ch.title}${pageStr} • ${(pct * 100).toFixed(1)}%`,
       si: chapterIndex,
-      pp: 1,
-      pc: 10,
+      pp: pageIndex + 1,
+      pc: totalPages || 10,
     };
 
     const res = await fetch(`/api/v1/bookmarks/${book.ko_md5_partial}`, {
@@ -1020,15 +1376,24 @@ function bindReaderEvents() {
     }
   });
 
-  // Typography popover controls
+  // Typography & reading mode popover controls
   document.getElementById('btn-reader-typo').addEventListener('click', () => {
     document.getElementById('reader-typo-popover').classList.toggle('hidden');
+  });
+
+  document.querySelectorAll('[data-reader-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.getAttribute('data-reader-mode');
+      setReaderMode(mode);
+    });
   });
 
   document.querySelectorAll('[data-reader-theme]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const t = btn.getAttribute('data-reader-theme');
-      document.querySelectorAll('.theme-swatch').forEach((b) => b.classList.remove('active'));
+      state.reader.theme = t;
+      localStorage.setItem('folio_reader_theme', t);
+      document.querySelectorAll('.theme-swatch[data-reader-theme]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('reader-scroll-container').setAttribute('data-reader-theme', t);
     });
@@ -1037,6 +1402,8 @@ function bindReaderEvents() {
   document.querySelectorAll('[data-reader-font]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const f = btn.getAttribute('data-reader-font');
+      state.reader.fontFamily = f;
+      localStorage.setItem('folio_reader_font_family', f);
       document.querySelectorAll('.font-choice-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       const map = {
@@ -1046,6 +1413,9 @@ function bindReaderEvents() {
         mono: "var(--font-mono)",
       };
       document.getElementById('reader-article').style.fontFamily = map[f] || map.serif;
+      if (state.reader.mode === 'paginated') {
+        setTimeout(updateReaderPaginationGeometry, 30);
+      }
     });
   });
 
@@ -1072,14 +1442,45 @@ function bindReaderEvents() {
     applyReaderTypography();
   });
 
+  // Responsive resize handler
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    const readerOpen = !document.getElementById('web-reader-overlay').classList.contains('hidden');
+    if (!readerOpen || state.reader.mode !== 'paginated') return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const prevRatio = state.reader.totalPages > 1 ? state.reader.pageIndex / (state.reader.totalPages - 1) : 0;
+      updateReaderPaginationGeometry();
+      const targetPage = Math.min(state.reader.totalPages - 1, Math.round(prevRatio * (state.reader.totalPages - 1)));
+      goToPage(targetPage, false);
+    }, 100);
+  });
+
   // Keyboard navigation inside reader
   window.addEventListener('keydown', (e) => {
     const readerOpen = !document.getElementById('web-reader-overlay').classList.contains('hidden');
     if (!readerOpen || isInputFocused()) return;
-    if (e.key === 'ArrowRight') {
-      loadReaderChapter(state.reader.chapterIndex + 1, 0);
-    } else if (e.key === 'ArrowLeft') {
-      loadReaderChapter(state.reader.chapterIndex - 1, 0);
+
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || (e.key === ' ' && !e.shiftKey)) {
+      e.preventDefault();
+      if (state.reader.mode === 'paginated') {
+        nextPage();
+      } else {
+        const scroller = document.getElementById('reader-scroll-container');
+        scroller.scrollBy({ top: scroller.clientHeight * 0.8, behavior: 'smooth' });
+      }
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || (e.key === ' ' && e.shiftKey)) {
+      e.preventDefault();
+      if (state.reader.mode === 'paginated') {
+        prevPage();
+      } else {
+        const scroller = document.getElementById('reader-scroll-container');
+        scroller.scrollBy({ top: -scroller.clientHeight * 0.8, behavior: 'smooth' });
+      }
+    } else if (e.key === 'm' || e.key === 'M') {
+      const nextMode = state.reader.mode === 'paginated' ? 'scroll' : 'paginated';
+      setReaderMode(nextMode);
+      showToast(`Switched to ${nextMode === 'paginated' ? 'Book (Paginated)' : 'Continuous Scroll'} mode`);
     } else if (e.key === 'Escape') {
       document.getElementById('btn-close-reader').click();
     }
@@ -1088,9 +1489,34 @@ function bindReaderEvents() {
 
 function applyReaderTypography() {
   const article = document.getElementById('reader-article');
+  const viewport = document.getElementById('reader-page-viewport');
+  if (!article) return;
+
   article.style.fontSize = `${state.reader.fontSize}px`;
-  article.style.maxWidth = state.reader.measure;
   document.getElementById('reader-font-size-val').textContent = `${state.reader.fontSize}px`;
+
+  const measureMap = {
+    '54ch': { scrollMax: '54ch', paginatedMax: '640px' },
+    '65ch': { scrollMax: '65ch', paginatedMax: '800px' },
+    '80ch': { scrollMax: '80ch', paginatedMax: '980px' },
+  };
+  const m = measureMap[state.reader.measure] || measureMap['65ch'];
+  article.style.maxWidth = m.scrollMax;
+  if (viewport) {
+    viewport.style.setProperty('--reader-paginated-max-width', m.paginatedMax);
+  }
+
+  localStorage.setItem('folio_reader_font_size', state.reader.fontSize);
+  localStorage.setItem('folio_reader_measure', state.reader.measure);
+
+  if (state.reader.mode === 'paginated') {
+    const prevRatio = state.reader.totalPages > 1 ? state.reader.pageIndex / (state.reader.totalPages - 1) : 0;
+    setTimeout(() => {
+      updateReaderPaginationGeometry();
+      const targetPage = Math.min(state.reader.totalPages - 1, Math.round(prevRatio * (state.reader.totalPages - 1)));
+      goToPage(targetPage, false);
+    }, 25);
+  }
 }
 
 // --- CrossPoint Reader Companion ---
