@@ -213,6 +213,24 @@ func (h *Handler) handleOpenSearch(w http.ResponseWriter, r *http.Request) {
 </OpenSearchDescription>`, mimeOPDSAcq, base)
 }
 
+func (h *Handler) buildDownloadHref(base string, b *db.Book, r *http.Request) string {
+	raw := fmt.Sprintf("%s/api/books/%d/download/%s", base, b.ID, url.PathEscape(b.FileName))
+	optParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("optimize")))
+	if optParam == "0" || optParam == "false" || optParam == "off" {
+		return raw
+	}
+	vals := url.Values{}
+	if optParam != "" {
+		vals.Set("optimize", optParam)
+	} else {
+		vals.Set("optimize", "crosspoint")
+	}
+	if prof := strings.TrimSpace(r.URL.Query().Get("profile")); prof != "" {
+		vals.Set("profile", prof)
+	}
+	return raw + "?" + vals.Encode()
+}
+
 func (h *Handler) handleAcquisitionFeed(w http.ResponseWriter, r *http.Request, title, feedID, defaultSort string) {
 	base := h.baseURL(r)
 	q := r.URL.Query().Get("q")
@@ -254,7 +272,7 @@ func (h *Handler) handleAcquisitionFeed(w http.ResponseWriter, r *http.Request, 
 		}
 
 		coverHref := fmt.Sprintf("%s/api/books/%d/cover", base, b.ID)
-		downloadHref := fmt.Sprintf("%s/api/books/%d/download/%s", base, b.ID, url.PathEscape(b.FileName))
+		downloadHref := h.buildDownloadHref(base, b, r)
 
 		summaryText := b.Description
 		if b.Series != "" {
@@ -405,7 +423,7 @@ func (h *Handler) handleOPDS2(w http.ResponseWriter, r *http.Request) {
 	pubs := make([]map[string]any, 0, len(books))
 	for _, b := range books {
 		coverHref := fmt.Sprintf("%s/api/books/%d/cover", base, b.ID)
-		downloadHref := fmt.Sprintf("%s/api/books/%d/download/%s", base, b.ID, url.PathEscape(b.FileName))
+		downloadHref := h.buildDownloadHref(base, b, r)
 		meta := map[string]any{
 			"@type":       "http://schema.org/Book",
 			"title":       b.Title,

@@ -735,7 +735,144 @@ func (s *Server) handleDownloadEPUB(w http.ResponseWriter, r *http.Request, book
 	w.Header().Set("Content-Type", "application/epub+zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, book.FileName))
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	q := r.URL.Query()
+	optParam := strings.ToLower(strings.TrimSpace(q.Get("optimize")))
+	profileParam := strings.ToLower(strings.TrimSpace(q.Get("profile")))
+	targetParam := strings.ToLower(strings.TrimSpace(q.Get("device_target")))
+	ua := strings.ToLower(r.Header.Get("User-Agent"))
+
+	shouldOptimize := false
+	if optParam != "0" && optParam != "false" && optParam != "off" {
+		if optParam == "1" || optParam == "true" || optParam == "crosspoint" || optParam == "x3" || optParam == "x4" ||
+			profileParam != "" || targetParam != "" ||
+			strings.Contains(ua, "crosspoint") || strings.Contains(ua, "esp32") || strings.Contains(ua, "freeink") {
+			shouldOptimize = true
+		}
+	}
+
+	if shouldOptimize {
+		opts := epub.DefaultOptimizeOptions()
+		opts.DetectedDevice = s.detectDefaultCrossPointModel()
+		if targetParam != "" {
+			opts.DeviceTarget = targetParam
+		} else if profileParam != "" {
+			opts.DeviceTarget = profileParam
+		} else if optParam == "x3" || optParam == "x4" {
+			opts.DeviceTarget = optParam
+		}
+		if qVal, err := strconv.Atoi(q.Get("quality")); err == nil && qVal >= 1 && qVal <= 100 {
+			opts.Quality = qVal
+		}
+		if gVal := strings.ToLower(q.Get("grayscale")); gVal == "0" || gVal == "false" {
+			opts.Grayscale = false
+		}
+		if cVal := strings.ToLower(q.Get("auto_crop")); cVal == "1" || cVal == "true" {
+			opts.AutoCrop = true
+		}
+		if sVal := strings.ToLower(q.Get("split_text")); sVal == "0" || sVal == "false" {
+			opts.SplitText = false
+		}
+
+		if optPath, summary, err := s.OptimizeBookForCrossPoint(book, opts); err == nil && optPath != "" {
+			if summary != nil {
+				w.Header().Set("X-CrossPoint-Optimized", summary.Profile)
+			}
+			http.ServeFile(w, r, optPath)
+			return
+		}
+	}
+
 	http.ServeFile(w, r, book.FilePath)
+}
+
+func (s *Server) detectDeviceModel(dev *db.Device) string {
+	if dev == nil {
+		return ""
+	}
+	if dev.LastStatusJSON != "" {
+		var st crosspoint.DeviceStatus
+		if json.Unmarshal([]byte(dev.LastStatusJSON), &st) == nil && st.Device != "" {
+			return st.Device
+		}
+	}
+	if st, rawJSON, err := s.CPClient.GetStatus(dev.Host, dev.HTTPPort); err == nil && st != nil {
+		s.Store.UpdateDeviceStatus(dev.ID, rawJSON)
+		dev.LastStatusJSON = rawJSON
+		if st.Device != "" {
+			return st.Device
+		}
+	}
+	for _, candidate := range []string{dev.DeviceModel, dev.Name} {
+		u := strings.ToUpper(candidate)
+		if strings.Contains(u, "X3") {
+			return "X3"
+		}
+		if strings.Contains(u, "X4") {
+			return "X4"
+		}
+	}
+	return ""
+}
+
+func (s *Server) detectDefaultCrossPointModel() string {
+	devices, err := s.Store.ListDevices()
+	if err != nil {
+		return ""
+	}
+	for _, d := range devices {
+		if d.LastStatusJSON != "" {
+			var st crosspoint.DeviceStatus
+			if json.Unmarshal([]byte(d.LastStatusJSON), &st) == nil && st.Device != "" {
+				return st.Device
+			}
+		}
+		for _, candidate := range []string{d.DeviceModel, d.Name} {
+			u := strings.ToUpper(candidate)
+			if strings.Contains(u, "X3") {
+				return "X3"
+			}
+			if strings.Contains(u, "X4") {
+				return "X4"
+			}
+		}
+	}
+	return ""
+}
+
+// OptimizeBookForCrossPoint runs the CrossPoint EPUB Optimizer on book.FilePath, caches the output,
+// and registers its KOReader partial MD5 hashes in book_hash_aliases so reading progress syncs back to the library book.
+func (s *Server) OptimizeBookForCrossPoint(book *db.Book, opts epub.OptimizeOptions) (string, *epub.OptimizeSummary, error) {
+	profile := epub.ResolveProfile(opts.DeviceTarget, opts.DetectedDevice)
+	if opts.Quality <= 0 || opts.Quality > 100 {
+		opts.Quality = epub.DefaultJPEGQuality
+	}
+	cacheDir := filepath.Join(s.Cfg.DataDir, "cache", "crosspoint")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return "", nil, err
+	}
+	outName := fmt.Sprintf("book_%d_%d_%s_q%d_g%t_c%t_s%t.epub",
+		book.ID, book.UpdatedAt, profile.Label, opts.Quality, opts.Grayscale, opts.AutoCrop, opts.SplitText)
+	outPath := filepath.Join(cacheDir, outName)
+
+	summary, err := epub.OptimizeEPUB(book.FilePath, outPath, opts)
+	if err != nil {
+		_ = os.Remove(outPath)
+		return "", nil, err
+	}
+
+	var hashes []string
+	if partialMD5, err := epub.ComputeKOReaderPartialMD5(outPath); err == nil && partialMD5 != "" {
+		hashes = append(hashes, partialMD5)
+	}
+	if altMD5, err := epub.ComputeAltPartialMD5(outPath); err == nil && altMD5 != "" {
+		hashes = append(hashes, altMD5)
+	}
+	if len(hashes) > 0 {
+		s.Store.RegisterBookHashes(book.ID, hashes...)
+	}
+
+	return outPath, summary, nil
 }
 
 // --- Xteink X3 / CrossPoint Reader Device Endpoints ---
@@ -897,10 +1034,16 @@ func (s *Server) handleDeviceSubroutes(w http.ResponseWriter, r *http.Request) {
 
 	case "push":
 		var req struct {
-			BookID     int64  `json:"book_id"`
-			TargetPath string `json:"target_path"`
-			Protocol   string `json:"protocol"`
-			Overwrite  *bool  `json:"overwrite"`
+			BookID       int64  `json:"book_id"`
+			TargetPath   string `json:"target_path"`
+			Protocol     string `json:"protocol"`
+			Overwrite    *bool  `json:"overwrite"`
+			Optimize     *bool  `json:"optimize"`
+			DeviceTarget string `json:"device_target"`
+			Quality      int    `json:"quality"`
+			Grayscale    *bool  `json:"grayscale"`
+			AutoCrop     *bool  `json:"auto_crop"`
+			SplitText    *bool  `json:"split_text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.BookID <= 0 {
 			writeErr(w, http.StatusBadRequest, "Valid book_id is required")
@@ -923,8 +1066,44 @@ func (s *Server) handleDeviceSubroutes(w http.ResponseWriter, r *http.Request) {
 		if req.Overwrite != nil {
 			overwrite = *req.Overwrite
 		}
+		optimize := true
+		if req.Optimize != nil {
+			optimize = *req.Optimize
+		}
 
-		res, err := s.CPClient.PushBook(dev.Host, dev.HTTPPort, dev.WSPort, targetDir, book.FileName, book.FilePath, proto, overwrite)
+		uploadFilePath := book.FilePath
+		var optSummary *epub.OptimizeSummary
+		var optSteps []string
+
+		if optimize {
+			opts := epub.DefaultOptimizeOptions()
+			if req.DeviceTarget != "" {
+				opts.DeviceTarget = req.DeviceTarget
+			}
+			opts.DetectedDevice = s.detectDeviceModel(dev)
+			if req.Quality >= 1 && req.Quality <= 100 {
+				opts.Quality = req.Quality
+			}
+			if req.Grayscale != nil {
+				opts.Grayscale = *req.Grayscale
+			}
+			if req.AutoCrop != nil {
+				opts.AutoCrop = *req.AutoCrop
+			}
+			if req.SplitText != nil {
+				opts.SplitText = *req.SplitText
+			}
+
+			if optPath, summary, optErr := s.OptimizeBookForCrossPoint(book, opts); optErr == nil && optPath != "" {
+				uploadFilePath = optPath
+				optSummary = summary
+				optSteps = append(optSteps, summary.Steps...)
+			} else if optErr != nil {
+				optSteps = append(optSteps, fmt.Sprintf("[WARN] Optimizer failed (%v), sending original EPUB unchanged", optErr))
+			}
+		}
+
+		res, err := s.CPClient.PushBook(dev.Host, dev.HTTPPort, dev.WSPort, targetDir, book.FileName, uploadFilePath, proto, overwrite)
 		if err != nil {
 			s.Store.RecordPushHistory(&db.PushHistory{
 				BookID:     book.ID,
@@ -941,6 +1120,10 @@ func (s *Server) handleDeviceSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if len(optSteps) > 0 {
+			res.Steps = append(optSteps, res.Steps...)
+		}
+
 		s.Store.RecordPushHistory(&db.PushHistory{
 			BookID:     book.ID,
 			BookTitle:  book.Title,
@@ -955,10 +1138,11 @@ func (s *Server) handleDeviceSubroutes(w http.ResponseWriter, r *http.Request) {
 		})
 
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":     true,
-			"result": res,
-			"book":   book,
-			"device": dev,
+			"ok":           true,
+			"result":       res,
+			"optimization": optSummary,
+			"book":         book,
+			"device":       dev,
 		})
 
 	case "configure-opds":

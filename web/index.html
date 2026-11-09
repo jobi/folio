@@ -622,6 +622,35 @@
               </div>
             </div>
 
+            <!-- CrossPoint EPUB Optimizer Settings -->
+            <div class="tech-hash-card" style="margin-bottom: 12px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                <label class="checkbox-label" style="margin:0; font-weight:600;">
+                  <input type="checkbox" id="x3-opt-enabled" checked />
+                  <span>Optimize EPUB for CrossPoint Reader before transfer</span>
+                </label>
+                <select id="x3-opt-target" class="form-input" style="width:auto; height:28px; padding:2px 8px; font-size:12px;">
+                  <option value="auto">Target: Auto (X3/X4)</option>
+                  <option value="X3">X3 (528&times;792)</option>
+                  <option value="X4">X4 (480&times;800)</option>
+                </select>
+              </div>
+              <div id="x3-opt-suboptions" style="display:flex; flex-wrap:wrap; gap:10px 16px; font-size:12px; color:var(--text-secondary);">
+                <label class="checkbox-label" style="margin:0;">
+                  <input type="checkbox" id="x3-opt-grayscale" checked />
+                  <span>Grayscale JPEG (85%)</span>
+                </label>
+                <label class="checkbox-label" style="margin:0;">
+                  <input type="checkbox" id="x3-opt-split" checked />
+                  <span>Split large chapters/paragraphs &amp; strip fonts</span>
+                </label>
+                <label class="checkbox-label" style="margin:0;">
+                  <input type="checkbox" id="x3-opt-autocrop" />
+                  <span>Auto-crop uniform margins</span>
+                </label>
+              </div>
+            </div>
+
             <div class="x3-push-cta-row">
               <button type="button" id="btn-execute-push" class="btn btn-primary btn-block">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
