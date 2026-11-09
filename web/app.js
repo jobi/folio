@@ -1324,12 +1324,30 @@ function bindX3ModalEvents() {
     }
   });
 
+  // Toggle optimizer sub-options state when master checkbox changes
+  const optEnabledEl = document.getElementById('x3-opt-enabled');
+  if (optEnabledEl) {
+    optEnabledEl.addEventListener('change', () => {
+      const disabled = !optEnabledEl.checked;
+      ['x3-opt-target', 'x3-opt-grayscale', 'x3-opt-split', 'x3-opt-autocrop'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = disabled;
+      });
+    });
+  }
+
   // Push EPUB to CrossPoint Reader
   document.getElementById('btn-execute-push').addEventListener('click', async () => {
     const devId = Number(document.getElementById('x3-device-select').value);
     const bookId = Number(document.getElementById('x3-push-book-select').value);
     const targetPath = document.getElementById('x3-push-dest-path').value || '/Books';
     const protocol = document.getElementById('x3-push-protocol').value || 'auto';
+
+    const optimize = document.getElementById('x3-opt-enabled') ? document.getElementById('x3-opt-enabled').checked : true;
+    const deviceTarget = document.getElementById('x3-opt-target') ? document.getElementById('x3-opt-target').value : 'auto';
+    const grayscale = document.getElementById('x3-opt-grayscale') ? document.getElementById('x3-opt-grayscale').checked : true;
+    const splitText = document.getElementById('x3-opt-split') ? document.getElementById('x3-opt-split').checked : true;
+    const autoCrop = document.getElementById('x3-opt-autocrop') ? document.getElementById('x3-opt-autocrop').checked : false;
 
     if (!devId || !bookId) {
       showToast('Select both a target CrossPoint Reader device and a book.');
@@ -1338,12 +1356,18 @@ function bindX3ModalEvents() {
 
     const logEl = document.getElementById('x3-protocol-log');
     const badgeEl = document.getElementById('x3-transfer-badge');
-    badgeEl.textContent = 'Streaming...';
-    logEl.textContent = `Initiating ${protocol.toUpperCase()} upload to CrossPoint Reader (${targetPath})...`;
+    badgeEl.textContent = optimize ? 'Optimizing & Streaming...' : 'Streaming...';
+    logEl.textContent = `${optimize ? 'Optimizing EPUB for CrossPoint Reader and initiating' : 'Initiating'} ${protocol.toUpperCase()} upload to CrossPoint Reader (${targetPath})...`;
 
     // Browser-Direct mode (useful when Folio runs in cloud/Docker and browser is on local Wi-Fi with the device)
     if (protocol === 'browser') {
-      await pushBrowserDirectToX3(devId, bookId, targetPath, logEl, badgeEl);
+      await pushBrowserDirectToX3(devId, bookId, targetPath, logEl, badgeEl, {
+        optimize,
+        deviceTarget,
+        grayscale,
+        splitText,
+        autoCrop,
+      });
       return;
     }
 
@@ -1356,6 +1380,11 @@ function bindX3ModalEvents() {
           target_path: targetPath,
           protocol: protocol,
           overwrite: true,
+          optimize: optimize,
+          device_target: deviceTarget,
+          grayscale: grayscale,
+          split_text: splitText,
+          auto_crop: autoCrop,
         }),
       });
       const data = await res.json();
@@ -1396,14 +1425,25 @@ function bindX3ModalEvents() {
   });
 }
 
-async function pushBrowserDirectToX3(devId, bookId, targetPath, logEl, badgeEl) {
+async function pushBrowserDirectToX3(devId, bookId, targetPath, logEl, badgeEl, optCfg = {}) {
   const dev = state.devices.find((d) => d.id === devId);
   const book = state.allBooksSnapshot.find((b) => b.id === bookId);
   if (!dev || !book) return;
 
   try {
-    logEl.textContent = `1. Fetching ${book.file_name} from Folio server...\n`;
-    const epubRes = await fetch(`/api/books/${book.id}/download/${encodeURIComponent(book.file_name)}`);
+    const params = new URLSearchParams();
+    if (optCfg.optimize !== false) {
+      params.set('optimize', 'crosspoint');
+      if (optCfg.deviceTarget) params.set('device_target', optCfg.deviceTarget);
+      if (optCfg.grayscale === false) params.set('grayscale', '0');
+      if (optCfg.splitText === false) params.set('split_text', '0');
+      if (optCfg.autoCrop === true) params.set('auto_crop', '1');
+    } else {
+      params.set('optimize', '0');
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    logEl.textContent = `1. Fetching ${optCfg.optimize !== false ? 'CrossPoint-optimized ' : ''}${book.file_name} from Folio server...\n`;
+    const epubRes = await fetch(`/api/books/${book.id}/download/${encodeURIComponent(book.file_name)}${qs}`);
     const blob = await epubRes.blob();
 
     const fd = new FormData();

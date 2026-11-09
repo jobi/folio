@@ -25,6 +25,10 @@
 - **Built-in Web EPUB Reader**
   - Read any book in your browser with full chapter navigation, Table of Contents, bookmarks, custom typography (*Newsreader*, *Georgia*, *Plus Jakarta Sans*, *JetBrains Mono*), four surface themes (*Warm Paper*, *Sepia*, *E-Ink Crisp*, *Archival Night*), and real-time bidirectional KOReader progress sync.
 - **CrossPoint Reader Integration**
+  - **Built-in CrossPoint EPUB Optimizer (`internal/epub/optimizer.go`)**: Automatically optimizes EPUBs before wireless push or OPDS download (matching the official CrossPoint Calibre plugin and firmware optimizer):
+    - Downscales images to fit the target screen (**X3**: `528×792`, **X4**: `480×800`, auto-detected via `/api/status`), flattens transparency onto white, converts to 8-bit ITU-R 601 grayscale JPEG, and stores images uncompressed (`ZIP_STORED`) for fast decoding on ESP32-C3 hardware.
+    - Unwraps SVG covers/images, strips hardcoded `<img>` dimensions, injects a defensive stylesheet, fixes OPF media-types & cover metadata, syncs the NCX `dtb:uid` identifier, and extracts base64 `data:image/...` URIs.
+    - Restructures oversized paragraphs (`> 1.6 KB` &rarr; `~1.2 KB` siblings) and chapters (`> 9.5 KB` &rarr; `~7 KB` split spine chunks with remapped `#anchor` links), removes embedded fonts, writes `META-INF/crosspoint-position-map.json`, and registers the optimized EPUB's KOReader MD5 hashes in `book_hash_aliases` so reading progress syncs seamlessly.
   - **Wireless Book Push**: Push EPUBs directly to your CrossPoint Reader while it is in **File Transfer** or **Calibre Wireless** mode using:
     1. **CrossPoint WebSocket Fast Upload (Port 81)**: `START:<filename>:<size>:<path>` &rarr; `READY` &rarr; binary chunk streaming &rarr; `PROGRESS:<received>:<total>` &rarr; `DONE`.
     2. **CrossPoint HTTP Multipart Upload (Port 80)**: `POST /upload?path=/Books&overwrite=1` (atomic `.part` staging and automatic library index refresh).
