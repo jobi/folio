@@ -400,8 +400,9 @@ func (s *Store) enrichBookProgress(b *Book) {
 		progress, percentage, position_json, metadata_json, timestamp, seq
 		FROM reading_progress
 		WHERE book_id = ? OR document_hash IN (?, ?, ?)
+		   OR document_hash IN (SELECT document_hash FROM book_hash_aliases WHERE book_id = ?)
 		ORDER BY timestamp DESC`,
-		b.ID, b.KOMD5Partial, b.KOMD5Alt, b.KOMD5Filename)
+		b.ID, b.KOMD5Partial, b.KOMD5Alt, b.KOMD5Filename, b.ID)
 	if err != nil {
 		return
 	}
@@ -885,11 +886,25 @@ func (s *Store) ListAllProgress(limit int) ([]*ReadingProgress, error) {
 // --- Bookmarks & Clippings ---
 
 func (s *Store) ListBookmarks(userID int64, docHash string, since int64) ([]*Bookmark, error) {
-	rows, err := s.Query(`SELECT id, user_id, document_hash, book_id, xpath, percentage, summary,
-		spine_index, page_in_chapter, chapter_pages, chapter_title, deleted, updated_at
-		FROM bookmarks
-		WHERE user_id = ? AND document_hash = ? AND updated_at > ?
-		ORDER BY updated_at ASC`, userID, docHash, since)
+	var bookID int64
+	if b, err := s.FindBookByDocumentHash(docHash, nil); err == nil && b != nil {
+		bookID = b.ID
+	}
+	var rows *sql.Rows
+	var err error
+	if bookID > 0 {
+		rows, err = s.Query(`SELECT id, user_id, document_hash, book_id, xpath, percentage, summary,
+			spine_index, page_in_chapter, chapter_pages, chapter_title, deleted, updated_at
+			FROM bookmarks
+			WHERE user_id = ? AND (document_hash = ? OR book_id = ?) AND updated_at > ?
+			ORDER BY updated_at ASC`, userID, docHash, bookID, since)
+	} else {
+		rows, err = s.Query(`SELECT id, user_id, document_hash, book_id, xpath, percentage, summary,
+			spine_index, page_in_chapter, chapter_pages, chapter_title, deleted, updated_at
+			FROM bookmarks
+			WHERE user_id = ? AND document_hash = ? AND updated_at > ?
+			ORDER BY updated_at ASC`, userID, docHash, since)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -953,10 +968,23 @@ func (s *Store) UpsertBookmark(bm *Bookmark) error {
 }
 
 func (s *Store) ListClippings(userID int64, docHash string, since int64) ([]*Clipping, error) {
-	rows, err := s.Query(`SELECT id, user_id, document_hash, book_id, spine, para, chapter, text, note, created_at, deleted, updated_at
-		FROM clippings
-		WHERE user_id = ? AND document_hash = ? AND updated_at > ?
-		ORDER BY updated_at ASC`, userID, docHash, since)
+	var bookID int64
+	if b, err := s.FindBookByDocumentHash(docHash, nil); err == nil && b != nil {
+		bookID = b.ID
+	}
+	var rows *sql.Rows
+	var err error
+	if bookID > 0 {
+		rows, err = s.Query(`SELECT id, user_id, document_hash, book_id, spine, para, chapter, text, note, created_at, deleted, updated_at
+			FROM clippings
+			WHERE user_id = ? AND (document_hash = ? OR book_id = ?) AND updated_at > ?
+			ORDER BY updated_at ASC`, userID, docHash, bookID, since)
+	} else {
+		rows, err = s.Query(`SELECT id, user_id, document_hash, book_id, spine, para, chapter, text, note, created_at, deleted, updated_at
+			FROM clippings
+			WHERE user_id = ? AND document_hash = ? AND updated_at > ?
+			ORDER BY updated_at ASC`, userID, docHash, since)
+	}
 	if err != nil {
 		return nil, err
 	}

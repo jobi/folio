@@ -182,7 +182,7 @@ func TestFolioEndToEnd(t *testing.T) {
 	}
 	opds2Resp.Body.Close()
 
-	// 6. Verify pushing book to CrossPoint Reader via WebSocket Fast Upload (port 19081) and HTTP Multipart (port 19080)
+	// 6. Verify pushing book to CrossPoint Reader via WebSocket Fast Upload (port 19081) runs CrossPoint EPUB Optimizer
 	devices, _ := store.ListDevices()
 	if len(devices) == 0 {
 		t.Fatalf("expected default devices")
@@ -190,21 +190,49 @@ func TestFolioEndToEnd(t *testing.T) {
 	simDev := devices[0]
 
 	pushPayload, _ := json.Marshal(map[string]any{
-		"book_id":     firstBook.ID,
-		"target_path": "/Books",
-		"protocol":    "websocket",
+		"book_id":       firstBook.ID,
+		"target_path":   "/Books",
+		"protocol":      "websocket",
+		"optimize":      true,
+		"device_target": "X3",
 	})
 	pushResp, err := http.Post(ts.URL+fmt.Sprintf("/api/devices/%d/push", simDev.ID), "application/json", bytes.NewReader(pushPayload))
 	if err != nil || pushResp.StatusCode != http.StatusOK {
 		t.Fatalf("WebSocket push to CrossPoint simulator failed: status=%v err=%v", pushResp.StatusCode, err)
 	}
+	var pushResultData struct {
+		OK           bool                  `json:"ok"`
+		Optimization *epub.OptimizeSummary `json:"optimization"`
+	}
+	_ = json.NewDecoder(pushResp.Body).Decode(&pushResultData)
 	pushResp.Body.Close()
+	if pushResultData.Optimization == nil || pushResultData.Optimization.Profile != "X3" {
+		t.Fatalf("expected CrossPoint X3 optimization summary in push response, got %+v", pushResultData.Optimization)
+	}
 
-	// Verify the pushed EPUB exists on the simulated CrossPoint Reader SD card
+	// Verify the pushed EPUB exists on the simulated CrossPoint Reader SD card and its MD5 alias resolves back to firstBook
 	pushedPath := filepath.Join(simDir, "Books", firstBook.FileName)
 	if _, err := os.Stat(pushedPath); err != nil {
 		t.Fatalf("expected pushed EPUB on CrossPoint SD card at %s: %v", pushedPath, err)
 	}
+	pushedMD5, err := epub.ComputeKOReaderPartialMD5(pushedPath)
+	if err != nil || pushedMD5 == "" {
+		t.Fatalf("compute partial MD5 of pushed EPUB: %v", err)
+	}
+	matchedBook, err := store.FindBookByDocumentHash(pushedMD5, nil)
+	if err != nil || matchedBook == nil || matchedBook.ID != firstBook.ID {
+		t.Fatalf("expected optimized EPUB MD5 (%s) to resolve to book ID %d via book_hash_aliases, got err=%v book=%+v", pushedMD5, firstBook.ID, err, matchedBook)
+	}
+
+	// Verify OPDS / download with ?optimize=crosspoint serves an optimized EPUB with X-CrossPoint-Optimized header
+	dlResp, err := http.Get(ts.URL + fmt.Sprintf("/api/books/%d/download/%s?optimize=crosspoint&profile=x3", firstBook.ID, firstBook.FileName))
+	if err != nil || dlResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET optimized download failed: %v", err)
+	}
+	if dlResp.Header.Get("X-CrossPoint-Optimized") != "X3" {
+		t.Fatalf("expected X-CrossPoint-Optimized: X3 header, got %q", dlResp.Header.Get("X-CrossPoint-Optimized"))
+	}
+	dlResp.Body.Close()
 
 	// 7. Verify Tailscale Authentication (Serve identity headers, user auto-provisioning, and strict mode)
 	reqTS, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/auth/tailscale", nil)
