@@ -263,9 +263,9 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			w.Header().Set("X-Tailscale-User", sess.LoginName)
 		}
 
-		// Always allow healthcheck and KOReader / CrossPoint API endpoints that carry their own x-auth-key
+		// Always allow healthcheck, client discovery probe, and KOReader / CrossPoint API endpoints that carry their own x-auth-key
 		path := r.URL.Path
-		if path == "/healthz" || isDeviceSyncPath(path) {
+		if path == "/healthz" || path == "/api/discover" || isDeviceSyncPath(path) {
 			next.ServeHTTP(w, r)
 			return
 		}

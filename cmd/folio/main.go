@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/folio-books/folio/internal/db"
 	"github.com/folio-books/folio/internal/epub"
 	"github.com/folio-books/folio/internal/kosync"
+	"github.com/folio-books/folio/internal/mdns"
 	"github.com/folio-books/folio/internal/opds"
 )
 
@@ -77,9 +79,16 @@ func main() {
 	log.Printf("Folio EPUB Library Server listening on http://localhost:%d (DB: %s)", cfg.Port, store.Driver)
 	log.Printf("  -> Tailscale Auth  : mode=%s (socket=%s, trust_headers=%v)", cfg.TailscaleAuthMode, cfg.TailscaleSocket, cfg.TailscaleTrustHeaders)
 	log.Printf("  -> Web UI & Reader : http://localhost:%d", cfg.Port)
+	log.Printf("  -> Discovery API   : http://localhost:%d/api/discover", cfg.Port)
 	log.Printf("  -> OPDS 1.2 Feed   : http://localhost:%d/opds", cfg.Port)
 	log.Printf("  -> OPDS 2.0 Feed   : http://localhost:%d/opds/v2", cfg.Port)
 	log.Printf("  -> KOReader Sync   : http://localhost:%d (user: %s)", cfg.Port, cfg.DefaultSyncUser)
+
+	mdnsCtx, mdnsCancel := context.WithCancel(context.Background())
+	defer mdnsCancel()
+	if cfg.EnableMDNS {
+		mdns.NewAdvertiser(cfg.Port).Start(mdnsCtx)
+	}
 
 	server := &http.Server{
 		Addr:              addr,
@@ -95,7 +104,7 @@ func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, x-auth-user, x-auth-key, X-Folio-Web, Tailscale-User-Login, Tailscale-User-Name, Tailscale-User-Profile-Pic, X-Tailscale-Node")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, x-auth-user, x-auth-key, X-Folio-Web, X-Folio-Client, Tailscale-User-Login, Tailscale-User-Name, Tailscale-User-Profile-Pic, X-Tailscale-Node")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return

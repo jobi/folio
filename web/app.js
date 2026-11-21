@@ -2076,6 +2076,15 @@ function renderTailscaleSession(ts) {
       ? 'tailscaled.sock Connected'
       : `Mode: ${ts.auth_mode} (${source})`;
   }
+
+  const baseOrigin = (state.systemInfo && state.systemInfo.base_url) || window.location.origin;
+  const discoverEl = document.getElementById('ts-ios-discover-url');
+  const deepLinkEl = document.getElementById('ts-ios-deeplink');
+  const deepLinkBtn = document.getElementById('btn-ios-deeplink-open');
+  if (discoverEl) discoverEl.textContent = `${baseOrigin}/api/discover`;
+  const pairURL = `folio://connect?url=${encodeURIComponent(baseOrigin)}`;
+  if (deepLinkEl) deepLinkEl.textContent = pairURL;
+  if (deepLinkBtn) deepLinkBtn.href = pairURL;
 }
 
 function bindTailscaleModalEvents() {

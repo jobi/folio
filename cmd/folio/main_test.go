@@ -271,4 +271,53 @@ func TestFolioEndToEnd(t *testing.T) {
 		t.Fatalf("expected 200 in strict Tailscale mode with Tailscale-User-Login header, got %v", authBooksResp.StatusCode)
 	}
 	authBooksResp.Body.Close()
+
+	// 8. Verify GET /api/discover works even in strict mode and identifies service + endpoints
+	discUnauthResp, err := http.Get(ts.URL + "/api/discover")
+	if err != nil || discUnauthResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on /api/discover, got err=%v status=%v", err, discUnauthResp.StatusCode)
+	}
+	var discUnauth map[string]any
+	_ = json.NewDecoder(discUnauthResp.Body).Decode(&discUnauth)
+	discUnauthResp.Body.Close()
+	if discUnauth["service"] != "folio" || discUnauth["authenticated"] != false {
+		t.Fatalf("unexpected unauthenticated /api/discover payload: %+v", discUnauth)
+	}
+	if _, hasCount := discUnauth["book_count"]; hasCount {
+		t.Fatalf("expected book_count omitted when unauthenticated in required mode")
+	}
+
+	discAuthReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/discover", nil)
+	discAuthReq.Header.Set("Tailscale-User-Login", "alice@example.ts.net")
+	discAuthResp, err := http.DefaultClient.Do(discAuthReq)
+	if err != nil || discAuthResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on authenticated /api/discover, got err=%v status=%v", err, discAuthResp.StatusCode)
+	}
+	var discAuth map[string]any
+	_ = json.NewDecoder(discAuthResp.Body).Decode(&discAuth)
+	discAuthResp.Body.Close()
+	if discAuth["authenticated"] != true || discAuth["user"] != "alice@example.ts.net" {
+		t.Fatalf("unexpected authenticated /api/discover payload: %+v", discAuth)
+	}
+	if cnt, ok := discAuth["book_count"].(float64); !ok || int(cnt) != 4 {
+		t.Fatalf("expected book_count=4 in authenticated /api/discover, got %v", discAuth["book_count"])
+	}
+
+	// 9. Verify native iOS client sync works via Tailscale-User-Login header or X-Folio-Client without x-auth-key
+	cfg.TailscaleAuthMode = "auto"
+	iosBody, _ := json.Marshal(map[string]any{
+		"document":   firstBook.KOMD5Partial,
+		"progress":   "/body/DocFragment[3]/body/p[2]/text().0",
+		"percentage": 0.78,
+		"device":     "Folio iOS",
+		"device_id":  "iphone-15-pro",
+	})
+	iosReq, _ := http.NewRequest(http.MethodPut, ts.URL+"/syncs/progress", bytes.NewReader(iosBody))
+	iosReq.Header.Set("Content-Type", "application/json")
+	iosReq.Header.Set("X-Folio-Client", "ios")
+	iosResp, err := http.DefaultClient.Do(iosReq)
+	if err != nil || iosResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for iOS client zero-config sync, got err=%v status=%v", err, iosResp.StatusCode)
+	}
+	iosResp.Body.Close()
 }

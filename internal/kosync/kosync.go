@@ -75,15 +75,16 @@ func (h *Handler) authenticateRequest(r *http.Request) (*db.User, bool) {
 		return u, true
 	}
 
-	// 2. Tailscale-authenticated request (via Tailscale Serve headers or tailscaled WhoIs when X-Folio-Web or Tailscale-User-Login is present)
+	// 2. Tailscale-authenticated request (via Tailscale Serve headers or tailscaled WhoIs, or first-party Folio web/iOS clients)
+	isFolioClient := r.Header.Get("X-Folio-Web") == "1" || strings.TrimSpace(r.Header.Get("X-Folio-Client")) != ""
 	if sess := tailscale.FromContext(r.Context()); sess != nil && sess.Authenticated && sess.User != nil {
-		if r.Header.Get("X-Folio-Web") == "1" || sess.Source == "tailscale-serve" || sess.Source == "tailscaled-whois" {
+		if isFolioClient || sess.Source == "tailscale-serve" || sess.Source == "tailscaled-whois" {
 			return sess.User, true
 		}
 	}
 
-	// 3. Fallback for built-in Web Reader
-	if username == "" && r.Header.Get("X-Folio-Web") == "1" {
+	// 3. Fallback for built-in Web Reader and local Folio clients when Tailscale enforcement is not required
+	if username == "" && isFolioClient && h.Cfg.TailscaleAuthMode != "required" {
 		u, err := h.Store.GetDefaultUser()
 		if err == nil && u != nil {
 			return u, true
@@ -94,7 +95,12 @@ func (h *Handler) authenticateRequest(r *http.Request) (*db.User, bool) {
 }
 
 func (h *Handler) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "folio-kosync"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"service": "folio-kosync",
+		"app":     "folio",
+		"version": "1.3.0",
+	})
 }
 
 func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {

@@ -39,6 +39,7 @@ func NewServer(store *db.Store, cfg *config.Config) *Server {
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/discover", s.handleDiscover)
 	mux.HandleFunc("/api/auth/tailscale", s.handleTailscaleAuth)
 	mux.HandleFunc("/api/system/info", s.handleSystemInfo)
 	mux.HandleFunc("/api/system/users", s.handleSystemUsers)
@@ -73,6 +74,91 @@ func (s *Server) baseURL(r *http.Request) string {
 		host = fmt.Sprintf("localhost:%d", s.Cfg.Port)
 	}
 	return fmt.Sprintf("%s://%s", scheme, host)
+}
+
+func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	sess := tailscale.FromContext(r.Context())
+	if sess == nil && s.TSAuth != nil {
+		sess = s.TSAuth.Resolve(r)
+	}
+
+	base := s.baseURL(r)
+	books, _ := s.Store.ListBooks("", "", "", "", "", "recent")
+
+	authMode := s.Cfg.TailscaleAuthMode
+	authSource := "anonymous"
+	authenticated := false
+	loginName := ""
+	displayName := ""
+	tailnet := ""
+	nodeName := ""
+	syncUsername := s.Cfg.DefaultSyncUser
+
+	if sess != nil {
+		authMode = sess.AuthMode
+		authSource = sess.Source
+		authenticated = sess.Authenticated
+		loginName = sess.LoginName
+		displayName = sess.DisplayName
+		tailnet = sess.Tailnet
+		nodeName = sess.NodeName
+		if sess.User != nil && sess.User.Username != "" {
+			syncUsername = sess.User.Username
+		}
+	}
+
+	resp := map[string]any{
+		"service":       "folio",
+		"app_name":      "Folio",
+		"version":       "1.3.0",
+		"name":          "Folio EPUB Library",
+		"base_url":      base,
+		"authenticated": authenticated,
+		"auth_mode":     authMode,
+		"auth_source":   authSource,
+		"user":          loginName,
+		"display_name":  displayName,
+		"sync_username": syncUsername,
+		"tailnet":       tailnet,
+		"node_name":     nodeName,
+		"mdns_enabled":  s.Cfg.EnableMDNS,
+		"capabilities": []string{
+			"books",
+			"offline-epub",
+			"kosync",
+			"v1-delta-sync",
+			"bookmarks",
+			"clippings",
+			"crosspoint",
+		},
+		"endpoints": map[string]string{
+			"books":      "/api/books",
+			"book":       "/api/books/{id}",
+			"download":   "/api/books/{id}/download",
+			"cover":      "/api/books/{id}/cover",
+			"manifest":   "/api/books/{id}/manifest",
+			"chapter":    "/api/books/{id}/chapter/{index}",
+			"kosync":     "/syncs/progress",
+			"delta_sync": "/api/v1/progress/changes",
+			"bookmarks":  "/api/v1/bookmarks/{hash}",
+			"clippings":  "/api/v1/clippings/{hash}",
+			"opds_v1":    "/opds",
+			"opds_v2":    "/opds/v2",
+		},
+		"server_time": time.Now().Unix(),
+	}
+
+	// Only expose library count when authenticated or when auth is not strictly required
+	if authenticated || authMode != "required" {
+		resp["book_count"] = len(books)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleTailscaleAuth(w http.ResponseWriter, r *http.Request) {
@@ -272,8 +358,9 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request) {
 		books = []*db.Book{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"books": books,
-		"total": len(books),
+		"books":       books,
+		"total":       len(books),
+		"server_time": time.Now().Unix(),
 	})
 }
 

@@ -893,6 +893,28 @@
                 <button type="button" class="copy-tiny-btn" data-copy-target="ts-cmd-sock">Copy</button>
               </div>
             </div>
+
+            <hr class="section-divider" />
+
+            <h3 class="panel-heading">Native iOS Client Discovery &amp; Pairing</h3>
+            <p class="panel-desc">
+              A native iOS client automatically detects this server over Tailscale MagicDNS (<code>folio</code>), LAN Bonjour (<code>_folio._tcp.local.</code>), or <code>GET /api/discover</code>.
+            </p>
+            <div class="endpoint-box">
+              <div class="endpoint-label">Discovery Endpoint</div>
+              <div class="endpoint-copy-row">
+                <code id="ts-ios-discover-url" class="endpoint-code">http://localhost:8080/api/discover</code>
+                <button type="button" class="copy-tiny-btn" data-copy-target="ts-ios-discover-url">Copy</button>
+              </div>
+            </div>
+            <div class="endpoint-box">
+              <div class="endpoint-label">1-Tap iOS Deep Link (<code>folio://connect</code>)</div>
+              <div class="endpoint-copy-row">
+                <code id="ts-ios-deeplink" class="endpoint-code">folio://connect?url=http%3A%2F%2Flocalhost%3A8080</code>
+                <button type="button" class="copy-tiny-btn" data-copy-target="ts-ios-deeplink">Copy</button>
+                <a id="btn-ios-deeplink-open" href="#" class="btn btn-xs btn-secondary" style="text-decoration:none;">Open</a>
+              </div>
+            </div>
           </div>
 
           <!-- Right: Interactive Tailscale Identity & Policy Simulator -->

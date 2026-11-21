@@ -21,6 +21,7 @@ type Config struct {
 	EnableMockX3        bool   // Enable built-in simulated Xteink X3 CrossPoint listener for testing
 	MockX3HTTPPort      int    // Simulated X3 HTTP port (default 18080)
 	MockX3WSPort        int    // Simulated X3 WebSocket upload port (default 18081)
+	EnableMDNS          bool   // Advertise _folio._tcp.local. via mDNS/Bonjour for LAN auto-discovery
 
 	// Tailscale Authentication Settings
 	TailscaleAuthMode     string   // "auto" (default: Tailscale WhoIs/Headers + dev fallback), "required" (strict Tailscale only), or "off"
@@ -68,6 +69,7 @@ func Load() *Config {
 		EnableMockX3:          getEnvBool("ENABLE_MOCK_X3", true),
 		MockX3HTTPPort:        getEnvInt("MOCK_X3_HTTP_PORT", 18080),
 		MockX3WSPort:          getEnvInt("MOCK_X3_WS_PORT", 18081),
+		EnableMDNS:            getEnvBool("ENABLE_MDNS", true),
 		TailscaleAuthMode:     strings.ToLower(getEnv("TAILSCALE_AUTH_MODE", "auto")),
 		TailscaleSocket:       getEnv("TS_SOCKET", getEnv("TAILSCALE_SOCKET", "/var/run/tailscale/tailscaled.sock")),
 		TailscaleTrustHeaders: getEnvBool("TAILSCALE_TRUST_HEADERS", true),
