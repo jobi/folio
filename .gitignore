@@ -20,3 +20,11 @@
 /go/
 /upload/
 
+# Xcode / macOS
+.DS_Store
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+.swiftpm/
+
