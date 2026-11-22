@@ -285,7 +285,8 @@ enum ReaderTheme: String, CaseIterable, Identifiable, Codable {
 }
 
 enum ReaderFontFamily: String, CaseIterable, Identifiable, Codable {
-    case serif = "Georgia, 'Iowan Old Style', serif"
+    case iowan = "'Iowan Old Style', Georgia, serif"
+    case georgia = "Georgia, serif"
     case palatino = "'Palatino', 'Book Antiqua', serif"
     case sans = "-apple-system, 'SF Pro Text', sans-serif"
     case mono = "'SF Mono', Menlo, monospace"
@@ -294,10 +295,33 @@ enum ReaderFontFamily: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .serif: return "Georgia"
+        case .iowan: return "Iowan Old Style"
+        case .georgia: return "Georgia"
         case .palatino: return "Palatino"
         case .sans: return "System Sans"
         case .mono: return "SF Mono"
+        }
+    }
+}
+
+enum ReaderMargin: String, CaseIterable, Identifiable, Codable {
+    case compact, standard, wide
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .compact: return "Compact"
+        case .standard: return "Standard"
+        case .wide: return "Wide"
+        }
+    }
+
+    var horizontalPx: Int {
+        switch self {
+        case .compact: return 18
+        case .standard: return 28
+        case .wide: return 40
         }
     }
 }

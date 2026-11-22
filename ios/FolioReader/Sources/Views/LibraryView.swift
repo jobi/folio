@@ -183,26 +183,16 @@ struct BookGridCard: View {
     let isDownloaded: Bool
     let isDownloading: Bool
 
-    private let api = FolioAPIClient()
+    private static let api = FolioAPIClient()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomLeading) {
-                Group {
-                    if let baseURL, let url = api.coverURL(baseURL: baseURL, book: book) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            default:
-                                coverPlaceholder
-                            }
-                        }
-                    } else {
-                        coverPlaceholder
-                    }
+                CachedCoverImage(
+                    book: book,
+                    url: baseURL.flatMap { Self.api.coverURL(baseURL: $0, book: book) }
+                ) {
+                    coverPlaceholder
                 }
                 .frame(height: 225)
                 .frame(maxWidth: .infinity)

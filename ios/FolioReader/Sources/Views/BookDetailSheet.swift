@@ -22,19 +22,11 @@ struct BookDetailSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(alignment: .top, spacing: 16) {
-                        Group {
-                            if let baseURL = discovery.activeBaseURL,
-                               let url = api.coverURL(baseURL: baseURL, book: book) {
-                                AsyncImage(url: url) { phase in
-                                    if case .success(let img) = phase {
-                                        img.resizable().scaledToFill()
-                                    } else {
-                                        RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.2))
-                                    }
-                                }
-                            } else {
-                                RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.2))
-                            }
+                        CachedCoverImage(
+                            book: book,
+                            url: discovery.activeBaseURL.flatMap { api.coverURL(baseURL: $0, book: book) }
+                        ) {
+                            RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.2))
                         }
                         .frame(width: 115, height: 170)
                         .clipShape(RoundedRectangle(cornerRadius: 8))

@@ -101,6 +101,10 @@ final class OfflineLibraryStore {
         return try EPUBParser.prepareExtractedEPUB(epubURL: epubURL, destinationDir: extractDir)
     }
 
+    /// Records reading progress locally and pushes to server.
+    /// By default (`force: false`), protects against overwriting a further-along synced position
+    /// from another device (e.g. CrossPoint / KOReader). Pass `force: true` to explicitly override.
+    @discardableResult
     func recordProgress(
         book: Book,
         percentage: Double,
@@ -108,9 +112,18 @@ final class OfflineLibraryStore {
         pageIndex: Int,
         totalPages: Int,
         paraIndex: Int,
-        baseURL: URL?
-    ) async {
+        baseURL: URL?,
+        force: Bool = false
+    ) async -> Bool {
         let clamped = max(0.001, min(1.0, percentage))
+
+        // Keep the furthest-along position unless explicitly overridden
+        if !force,
+           let existing = books.first(where: { $0.id == book.id })?.latestProgress ?? book.latestProgress,
+           existing.percentage > clamped + 0.002 {
+            return false
+        }
+
         let docFrag = spineIndex + 1
         let xpath = "/body/DocFragment[\(docFrag)]/body/section[1]/p[\(max(1, paraIndex))]/text().0"
 
@@ -164,32 +177,73 @@ final class OfflineLibraryStore {
         if let baseURL {
             do {
                 try await api.pushProgress(baseURL: baseURL, payload: payload)
-                return
+                // Remove any queued outbox entry for this document now that we pushed directly
+                pendingSyncOutbox.removeAll { $0.payload.document == payload.document }
+                persistOutbox()
+                return true
             } catch {
                 // Fall through to offline outbox queue
             }
         }
 
         enqueueSyncOutbox(payload)
+        return true
     }
 
+    /// Pulls the latest progress from the server without clobbering a further-along remote position.
+    /// Returns the furthest-along progress between remote and local.
     func syncLatestProgress(for book: Book, baseURL: URL?) async -> ReadingProgress? {
-        guard let baseURL else { return book.latestProgress }
-        await flushSyncOutbox(baseURL: baseURL)
-        if let remote = try? await api.pullProgress(baseURL: baseURL, documentHash: book.koMD5Partial) {
+        let local = books.first(where: { $0.id == book.id })?.latestProgress ?? book.latestProgress
+        guard let baseURL else { return local }
+
+        // Pull remote FIRST so we never flush a stale offline outbox item over a further remote position
+        let remote = try? await api.pullProgress(baseURL: baseURL, documentHash: book.koMD5Partial)
+
+        if let remote {
+            // Drop any queued outbox item for this book if remote is already at or ahead of it
+            let beforeCount = pendingSyncOutbox.count
+            pendingSyncOutbox.removeAll { item in
+                item.payload.document == book.koMD5Partial && remote.percentage >= item.payload.percentage - 0.002
+            }
+            if pendingSyncOutbox.count != beforeCount {
+                persistOutbox()
+            }
+
+            // Flush any remaining outbox items (e.g. if local offline reading actually went further)
+            await flushSyncOutbox(baseURL: baseURL)
+
+            // Keep whichever is furthest along
+            let best: ReadingProgress
+            if let local, local.percentage > remote.percentage + 0.002 {
+                best = local
+            } else {
+                best = remote
+            }
+
             if let idx = books.firstIndex(where: { $0.id == book.id }) {
-                books[idx].latestProgress = remote
+                books[idx].latestProgress = best
                 persistCatalogCache()
             }
-            return remote
+            return best
         }
-        return book.latestProgress
+
+        await flushSyncOutbox(baseURL: baseURL)
+        return local
     }
 
     func flushSyncOutbox(baseURL: URL) async {
         guard !pendingSyncOutbox.isEmpty else { return }
         var remaining: [SyncOutboxItem] = []
         for item in pendingSyncOutbox {
+            // Check remote before pushing queued offline progress so we don't regress another device
+            if let remote = try? await api.pullProgress(baseURL: baseURL, documentHash: item.payload.document),
+               remote.percentage > item.payload.percentage + 0.002 {
+                if let idx = books.firstIndex(where: { $0.koMD5Partial == item.payload.document }) {
+                    books[idx].latestProgress = remote
+                    persistCatalogCache()
+                }
+                continue
+            }
             do {
                 try await api.pushProgress(baseURL: baseURL, payload: item.payload)
             } catch {
